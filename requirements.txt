@@ -1,0 +1,11 @@
+litellm==1.57.3
+crawl4ai
+requests
+google-api-python-client
+python-dotenv
+tldextract
+aiohttp
+fastapi[all]
+uvicorn
+aiomysql
+pydantic<2

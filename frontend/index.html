@@ -1,0 +1,321 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Lead Scraper</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-gray-900 text-white font-sans">
+  <div class="container mx-auto p-8">
+    <!-- Header -->
+    <header class="text-center mb-12">
+      <h1 class="text-5xl font-extrabold text-white">Lead Scraper</h1>
+      <p class="text-gray-400 mt-2">Your one-stop solution for lead generation.</p>
+    </header>
+
+    <main>
+      <!-- Input Form -->
+      <div class="max-w-3xl mx-auto bg-gray-800 rounded-lg shadow-lg p-8">
+        <form id="scrape-form">
+          <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-6">
+            <div>
+              <label for="service" class="block text-gray-300 font-bold mb-2 text-lg">Service</label>
+              <input type="text" id="service" name="service"
+                class="bg-gray-700 border border-gray-600 rounded w-full py-3 px-4 text-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                placeholder="e.g., Web Development" required>
+            </div>
+            <div>
+              <label for="industry" class="block text-gray-300 font-bold mb-2 text-lg">Industry</label>
+              <input type="text" id="industry" name="industry"
+                class="bg-gray-700 border border-gray-600 rounded w-full py-3 px-4 text-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                placeholder="e.g., E-commerce" required>
+            </div>
+            <div>
+              <label for="location" class="block text-gray-300 font-bold mb-2 text-lg">Location</label>
+              <input type="text" id="location" name="location"
+                class="bg-gray-700 border border-gray-600 rounded w-full py-3 px-4 text-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                placeholder="e.g., New York" required>
+            </div>
+          </div>
+
+          <!-- Agents -->
+          <div class="mb-8">
+            <label class="block text-gray-300 font-bold mb-2 text-lg">Select Agents</label>
+            <div class="flex flex-wrap gap-4">
+              <label class="flex items-center space-x-2 bg-gray-700 px-4 py-2 rounded-lg cursor-pointer hover:bg-gray-600">
+                <input type="checkbox" name="agents" value="google" class="form-checkbox h-5 w-5 text-indigo-600 rounded">
+                <span>Google</span>
+              </label>
+              <label class="flex items-center space-x-2 bg-gray-700 px-4 py-2 rounded-lg cursor-pointer hover:bg-gray-600">
+                <input type="checkbox" name="agents" value="facebook" class="form-checkbox h-5 w-5 text-indigo-600 rounded">
+                <span>Facebook</span>
+              </label>
+              <label class="flex items-center space-x-2 bg-gray-700 px-4 py-2 rounded-lg cursor-pointer hover:bg-gray-600">
+                <input type="checkbox" name="agents" value="linkedin" class="form-checkbox h-5 w-5 text-indigo-600 rounded">
+                <span>LinkedIn</span>
+              </label>
+              <label class="flex items-center space-x-2 bg-gray-700 px-4 py-2 rounded-lg cursor-pointer hover:bg-gray-600">
+                <input type="checkbox" name="agents" value="twitter" class="form-checkbox h-5 w-5 text-indigo-600 rounded">
+                <span>Twitter</span>
+              </label>
+
+              <label class="flex items-center space-x-2 bg-gray-700 px-4 py-2 rounded-lg cursor-pointer hover:bg-gray-600">
+                <input type="checkbox" name="agents" value="instagram" class="form-checkbox h-5 w-5 text-indigo-600 rounded">
+                <span>Instagram</span>
+              </label>
+              <label class="flex items-center space-x-2 bg-gray-700 px-4 py-2 rounded-lg cursor-pointer hover:bg-gray-600">
+                <input type="checkbox" name="agents" value="freelance" class="form-checkbox h-5 w-5 text-indigo-600 rounded">
+                <span>Freelance Platforms</span>
+              </label>
+            </div>
+          </div>
+
+          <!-- Submit -->
+          <div class="text-center">
+            <button type="submit" id="submit-button"
+              class="bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-3 px-8 rounded-full transition duration-300 ease-in-out transform hover:-translate-y-1">
+              Scrape Leads
+            </button>
+            <button type="button" id="stop-button"
+              class="bg-red-600 hover:bg-red-700 text-white font-bold py-3 px-8 rounded-full transition duration-300 ease-in-out transform hover:-translate-y-1 hidden">
+              Stop Scraping
+            </button>
+          </div>
+        </form>
+      </div>
+
+      <!-- Progress -->
+      <div id="progress-container" class="max-w-7xl mx-auto mt-12 hidden">
+        <h2 class="text-3xl font-bold mb-4">Progress</h2>
+        <div class="bg-gray-700 rounded-full h-4 mb-4">
+          <div id="progress-bar" class="bg-indigo-600 h-4 rounded-full" style="width: 0%"></div>
+        </div>
+        <div id="log-container" class="bg-gray-800 rounded-lg shadow-lg p-4 h-64 overflow-y-auto"></div>
+      </div>
+
+      <!-- Results -->
+      <div id="results-container" class="max-w-7xl mx-auto mt-12 hidden">
+        <div class="flex justify-between items-center mb-8">
+          <h2 class="text-3xl font-bold">Results</h2>
+          <div class="flex gap-2">
+            <button id="sort-button"
+              class="inline-flex items-center bg-gray-700 hover:bg-gray-600 text-white font-bold py-2 px-4 rounded-lg">
+              Sort by Score
+            </button>
+            <button id="export-csv"
+              class="inline-flex items-center bg-green-600 hover:bg-green-700 text-white font-bold py-2 px-4 rounded-lg">
+              Export to CSV
+            </button>
+            <button id="clear-results"
+              class="inline-flex items-center bg-red-600 hover:bg-red-700 text-white font-bold py-2 px-4 rounded-lg">
+              Clear Results
+            </button>
+          </div>
+        </div>
+
+        <!-- Leads Cards -->
+        <div id="leads-list" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6"></div>
+      </div>
+    </main>
+
+    <!-- Footer -->
+    <footer class="text-center mt-16 text-gray-500">
+      <p>&copy; 2025 Lead Scraper. All rights reserved.</p>
+    </footer>
+  </div>
+
+  <!-- Script -->
+  <script>
+    const API_BASE_URL = 'http://127.0.0.1:8000';
+    let currentJobId = null;
+    let pollingInterval = null;
+
+    const submitButton = document.getElementById('submit-button');
+    const stopButton = document.getElementById('stop-button');
+    const progressContainer = document.getElementById('progress-container');
+    const resultsContainer = document.getElementById('results-container');
+    const logContainer = document.getElementById('log-container');
+    const leadsList = document.getElementById('leads-list');
+    const progressBar = document.getElementById('progress-bar');
+    const scrapeForm = document.getElementById('scrape-form');
+
+    function updateUIForRunningJob() {
+      submitButton.classList.add('hidden');
+      stopButton.classList.remove('hidden');
+      progressContainer.classList.remove('hidden');
+      resultsContainer.classList.add('hidden');
+      logContainer.innerHTML = '';
+      leadsList.innerHTML = '';
+      progressBar.style.width = '0%';
+    }
+
+    function updateUIForCompletedJob() {
+      submitButton.classList.remove('hidden');
+      stopButton.classList.add('hidden');
+      resultsContainer.classList.remove('hidden');
+      progressBar.style.width = '100%';
+      if (pollingInterval) {
+        clearInterval(pollingInterval);
+        pollingInterval = null;
+      }
+    }
+
+    function addLogMessage(message, isError = false) {
+      const p = document.createElement('p');
+      p.textContent = message;
+      if (isError) {
+        p.classList.add('text-red-400');
+      }
+      logContainer.appendChild(p);
+      logContainer.scrollTop = logContainer.scrollHeight; // Auto-scroll
+    }
+
+    function addLeadCard(lead) {
+      const card = document.createElement('div');
+      card.classList.add('lead-card','bg-gray-800','rounded-xl','shadow-md','p-6','mb-6','hover:bg-gray-700','transition','duration-200');
+      card.dataset.score = lead.lead_score || 0;
+      card.innerHTML = `
+        <div class="flex justify-between items-center mb-4">
+          <h3 class="text-xl font-bold">${lead.company_name || '—'}</h3>
+          <span class="px-3 py-1 text-xs font-semibold rounded-full ${lead.qualified === 'Yes' ? 'bg-green-100 text-green-800' : 'bg-yellow-100 text-yellow-800'}">
+            ${lead.qualified || 'No'}
+          </span>
+        </div>
+        <p class="text-sm text-gray-400 mb-2">Source: ${lead.source} | Score: <span class="font-bold">${lead.lead_score || 'N/A'}</span></p>
+        <a href="${lead.website}" target="_blank" class="text-indigo-400 hover:underline break-all">${lead.website}</a>
+        <div class="mt-4">
+            <p><strong>Email:</strong> ${lead.email || 'N/A'}</p>
+            <p><strong>Phone:</strong> ${lead.phone || 'N/A'}</p>
+        </div>
+        <div class="mt-4 bg-gray-900 p-3 rounded">
+            <p class="font-bold text-gray-300">Reasoning:</p>
+            <p class="text-sm text-gray-400">${lead.reasoning || 'N/A'}</p>
+        </div>
+        <div class="mt-2 bg-gray-900 p-3 rounded">
+            <p class="font-bold text-green-400">Signals:</p>
+            <p class="text-sm text-green-300">${lead.signals && lead.signals.length ? lead.signals.join(', ') : 'None'}</p>
+        </div>
+        <div class="mt-2 bg-gray-900 p-3 rounded">
+            <p class="font-bold text-red-400">Red Flags:</p>
+            <p class="text-sm text-red-300">${lead.red_flags && lead.red_flags.length ? lead.red_flags.join(', ') : 'None'}</p>
+        </div>
+        <div class="mt-2 pt-2 border-t border-gray-700">
+            <p class="text-xs text-gray-500">Search: ${lead.search_tag || 'N/A'}</p>
+        </div>
+      `;
+      leadsList.appendChild(card);
+    }
+
+    async function pollJobStatus() {
+      if (!currentJobId) return;
+
+      try {
+        const response = await fetch(`${API_BASE_URL}/status/${currentJobId}`);
+        const data = await response.json();
+
+        if (response.ok) {
+          // Update log
+          const currentLogLength = logContainer.children.length;
+          for (let i = currentLogLength; i < data.log.length; i++) {
+            addLogMessage(data.log[i]);
+          }
+
+          // Update leads
+          const currentLeadsCount = leadsList.children.length;
+          for (let i = currentLeadsCount; i < data.leads.length; i++) {
+            addLeadCard(data.leads[i]);
+          }
+
+          // Update progress bar
+          progressBar.style.width = `${data.progress || 0}%`;
+
+          if (data.status === 'completed' || data.status === 'failed') {
+            updateUIForCompletedJob();
+            if (data.status === 'completed') {
+              addLogMessage('Job completed successfully!', false);
+            } else {
+              addLogMessage('Job failed!', true);
+            }
+            // Optionally fetch final results if needed, though status already has them
+            // const finalResults = await fetch(`${API_BASE_URL}/results/${currentJobId}`);
+            // const finalData = await finalResults.json();
+            // finalData.leads.forEach(addLeadCard);
+          }
+        } else {
+          addLogMessage(`Error checking status: ${data.error || response.statusText}`, true);
+          updateUIForCompletedJob();
+        }
+      } catch (error) {
+        addLogMessage(`Network error during polling: ${error.message}`, true);
+        updateUIForCompletedJob();
+      }
+    }
+
+    scrapeForm.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      updateUIForRunningJob();
+
+      const formData = new FormData(e.target);
+      const payload = {
+        service: formData.get('service'),
+        industry: formData.get('industry'),
+        location: formData.get('location'),
+        agents: formData.getAll('agents')
+      };
+
+      try {
+        const response = await fetch(`${API_BASE_URL}/scrape`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify(payload)
+        });
+
+        const data = await response.json();
+
+        if (response.ok) {
+          currentJobId = data.job_id;
+          addLogMessage(`Job started with ID: ${currentJobId}`);
+          pollingInterval = setInterval(pollJobStatus, 1000); // Poll every 1 second
+        } else {
+          addLogMessage(`Error starting job: ${data.error || response.statusText}`, true);
+          updateUIForCompletedJob();
+        }
+      } catch (error) {
+        addLogMessage(`Network error starting job: ${error.message}`, true);
+        updateUIForCompletedJob();
+      }
+    });
+
+    stopButton.addEventListener('click', () => {
+      if (pollingInterval) {
+        clearInterval(pollingInterval);
+        pollingInterval = null;
+      }
+      currentJobId = null;
+      addLogMessage('Scraping stopped by user.', true);
+      updateUIForCompletedJob();
+    });
+
+    document.getElementById('sort-button')?.addEventListener('click', () => {
+      const list = document.getElementById('leads-list');
+      const cards = Array.from(list.querySelectorAll('.lead-card'));
+      cards.sort((a, b) => parseInt(b.dataset.score) - parseInt(a.dataset.score));
+      cards.forEach(card => list.appendChild(card));
+    });
+
+    document.getElementById('export-csv')?.addEventListener('click', () => {
+      window.location.href = `${API_BASE_URL}/export_csv`; // Direct link to API endpoint
+    });
+
+    document.getElementById('clear-results')?.addEventListener('click', () => {
+      leadsList.innerHTML = '';
+      resultsContainer.classList.add('hidden');
+      logContainer.innerHTML = '';
+      progressBar.style.width = '0%';
+    });
+  </script>
+</body>
+</html>
