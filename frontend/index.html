@@ -175,6 +175,14 @@
       const card = document.createElement('div');
       card.classList.add('lead-card','bg-gray-800','rounded-xl','shadow-md','p-6','mb-6','hover:bg-gray-700','transition','duration-200');
       card.dataset.score = lead.lead_score || 0;
+
+      const socialLinks = lead.social_media_links || {};
+      const socialLinksHtml = Object.entries(socialLinks)
+        .filter(([key, value]) => value && value !== 'N/A' && value.trim() !== '')
+        .map(([key, value]) => `
+          <a href="${value}" target="_blank" class="text-indigo-400 hover:underline capitalize">${key}</a>
+        `).join(' | ');
+
       card.innerHTML = `
         <div class="flex justify-between items-center mb-4">
           <h3 class="text-xl font-bold">${lead.company_name || '—'}</h3>
@@ -184,10 +192,16 @@
         </div>
         <p class="text-sm text-gray-400 mb-2">Source: ${lead.source} | Score: <span class="font-bold">${lead.lead_score || 'N/A'}</span></p>
         <a href="${lead.website}" target="_blank" class="text-indigo-400 hover:underline break-all">${lead.website}</a>
+        
+        
+
         <div class="mt-4">
             <p><strong>Email:</strong> ${lead.email || 'N/A'}</p>
-            <p><strong>Phone:</strong> ${lead.phone || 'N/A'}</p>
+            <p><strong>Contact No:</strong> ${lead.contact_no || 'N/A'}</p>
         </div>
+
+        
+
         <div class="mt-4 bg-gray-900 p-3 rounded">
             <p class="font-bold text-gray-300">Reasoning:</p>
             <p class="text-sm text-gray-400">${lead.reasoning || 'N/A'}</p>

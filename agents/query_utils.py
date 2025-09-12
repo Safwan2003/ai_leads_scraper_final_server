@@ -11,9 +11,9 @@ def clean_query_output(raw_query: str, service: str, industry: str, location: st
     # Take the last line in case of multi-line output
     cleaned = raw_query.strip().split("\n")[-1].strip()
     
-    # Heuristic check: if the query is very short or misses key terms, rebuild it
-    if len(cleaned) < 15 or not all(k.lower() in cleaned.lower() for k in [service, industry, location]):
-        cleaned = f'"{industry}" "{service}" "{location}"'
+    # Heuristic check removed to allow for more complex, AI-generated queries.
+    # if len(cleaned) < 15 or not all(k.lower() in cleaned.lower() for k in [service, industry, location]):
+    #     cleaned = f'"{industry}" "{service}" "{location}"'
 
     # Ensure the site constraint is present
     if site and f"site:{site}" not in cleaned:

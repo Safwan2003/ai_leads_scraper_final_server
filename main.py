@@ -145,14 +145,16 @@ async def export_csv():
     output = io.StringIO()
     writer = csv.writer(output)
     # Adjust header to match all fields from the database
-    writer.writerow(['id', 'company_name', 'website', 'email', 'phone', 'qualified', 'lead_score', 'reasoning', 'signals', 'red_flags', 'source', 'search_tag', 'scraped_content_preview', 'last_updated'])
+    writer.writerow(['id', 'company_name', 'website', 'email', 'contact_no', 'industry', 'location', 'qualified', 'lead_score', 'reasoning', 'signals', 'red_flags', 'source', 'search_tag', 'scraped_content_preview', 'last_updated'])
     for lead in leads:
         writer.writerow([
             lead.get('id'),
             lead.get('company_name', 'N/A'),
             lead.get('website', 'N/A'),
-            lead.get('email', 'N/A'),
-            lead.get('phone', 'N/A'),
+            json.dumps(lead.get('email', [])),
+            json.dumps(lead.get('contact_no', [])),
+            lead.get('industry', 'N/A'),
+            lead.get('location', 'N/A'),
             lead.get('qualified', 'N/A'),
             lead.get('lead_score', 'N/A'),
             lead.get("reasoning", ""),

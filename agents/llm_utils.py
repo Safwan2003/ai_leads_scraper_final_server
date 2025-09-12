@@ -14,7 +14,7 @@ from core.config import NEGATIVE_KEYWORDS # Import NEGATIVE_KEYWORDS from config
 # -------------------------
 async def call_llm_with_retry(
     prompt: str,
-    model: str = "groq/llama-3.3-70b-versatile",
+    model: str = "groq/openai/gpt-oss-20b",
     temperature: float = 0.3,
     retries: int = 3,
     response_format=None,
@@ -65,7 +65,7 @@ async def generate_retry_query(original_query: str, platform: str) -> str:
     prompt = f'''
 Original query: {original_query}
 Platform: {platform}
-The previous search query yielded insufficient results. Generate a broader query that keeps business relevance but returns more results. This is a self-correction step to improve search coverage. Output only the query.
+Generate a broader query that keeps business relevance but returns more results. Output only the query.
 '''
     try:
         resp = await call_llm_with_retry(prompt, temperature=0.6)
@@ -80,12 +80,20 @@ The previous search query yielded insufficient results. Generate a broader query
 # -------------------------
 # Qualifier
 # -------------------------
-async def qualify_and_score_lead(markdown_content: str, service: str, industry: str, location: str) -> Dict[str, Any]:
+async def qualify_and_score_lead(
+    markdown_content: str,
+    service: str,
+    industry: str,
+    location: str,
+    extra_contacts: dict = None
+) -> Dict[str, Any]:
     if any(k in (markdown_content or "").lower() for k in NEGATIVE_KEYWORDS):
         return {
             "company_name": "N/A",
+            "company_description": "N/A",
             "email": "N/A",
-            "phone": "N/A",
+            "contact_no": "N/A",
+            "social_media_links": {},
             "qualified": "Maybe",
             "lead_score": 1,
             "reasoning": "Contains negative keywords.",
@@ -95,50 +103,70 @@ async def qualify_and_score_lead(markdown_content: str, service: str, industry: 
         }
 
     prompt = f'''
-You are a sales analyst. Given the page content, determine if it's a potential lead for:
+You are an expert sales analyst. Your task is to analyze the provided website content and determine if the business is a potential lead for the given service.
+
 Service: {service}
 Industry: {industry}
 Location: {location}
 
-Return JSON with keys:
-company_name, email, phone, qualified (Yes/Maybe/No), lead_score (0-10), reasoning, signals (list), red_flags (list)
-Content:
+---
+
+**Instructions:**
+
+1.  **Identify the Company:** Find the company\'s name. It\'s often in the page title, headers, or footer.
+2.  **Find Contact Information:** Extract the company\'s email and phone number. Prioritize the "Extra Contacts" provided below, as they were found by a scraper.
+3.  **Qualify the Lead:** Based on the content, decide if the business is a "Yes", "Maybe", or "No" for the specified service.
+4.  **Score the Lead:** Assign a lead score from 0 to 10, where 10 is a perfect match.
+5.  **Provide Reasoning:** Briefly explain your reasoning for the qualification and score.
+6.  **Identify Signals and Red Flags:** List any positive signals (e.g., "outdated website", "no blog") or red flags (e.g., "already using a competitor", "not in the right industry").
+
+---
+
+**Extra Contacts (from scraping):**
+Emails: {extra_contacts.get("emails") if extra_contacts else []}
+Contact No: {extra_contacts.get("contact_no") if extra_contacts else []}
+
+---
+
+**Content to Analyze:**
 {(markdown_content or '')[:4000]}
+
+---
+
+**Output Format:**
+
+Return a single JSON object with the following keys:
+"company_name", "email", "contact_no", "qualified", "lead_score", "reasoning", "signals", "red_flags"
 '''
     try:
         resp = await call_llm_with_retry(prompt, temperature=0.15, response_format={"type": "json_object"})
         raw = resp.choices[0].message.content.strip()
+        analysis = {}
         try:
             analysis = json.loads(raw)
         except Exception:
             m = re.search(r"{{.*}}", raw, flags=re.S)
-            analysis = json.loads(m.group(0)) if m else {}
-        company_name = analysis.get("company_name") or "N/A"
-        email = analysis.get("email") or "N/A"
-        phone = analysis.get("phone") or "N/A"
-        qualified = analysis.get("qualified") or "Maybe"
-        lead_score = int(analysis.get("lead_score") or 0)
-        reasoning = analysis.get("reasoning") or ""
-        signals = analysis.get("signals") or []
-        red_flags = analysis.get("red_flags") or []
-        lead_score = max(0, min(10, lead_score))
+            if m: analysis = json.loads(m.group(0))
+
+        lead_score = max(0, min(10, int(analysis.get("lead_score") or 0)))
+
         return {
-            "company_name": company_name,
-            "email": email,
-            "phone": phone,
-            "qualified": qualified,
+            "company_name": analysis.get("company_name") or "N/A",
+            "email": analysis.get("email") or (extra_contacts.get("emails")[0] if extra_contacts and extra_contacts.get("emails") else "N/A"),
+            "contact_no": analysis.get("contact_no") or (extra_contacts.get("contact_no")[0] if extra_contacts and extra_contacts.get("contact_no") else "N/A"),
+            "qualified": analysis.get("qualified") or "Maybe",
             "lead_score": lead_score,
-            "reasoning": reasoning,
-            "signals": signals,
-            "red_flags": red_flags,
+            "reasoning": analysis.get("reasoning") or "",
+            "signals": analysis.get("signals") or [],
+            "red_flags": analysis.get("red_flags") or [],
             "scraped_content_preview": (markdown_content or "")[:500].replace("\n", " ") + "..."
         }
     except Exception as e:
         print(f"Error during qualification: {e}")
         return {
             "company_name": "N/A",
-            "email": "N/A",
-            "phone": "N/A",
+            "email": extra_contacts.get("emails")[0] if extra_contacts and extra_contacts.get("emails") else "N/A",
+            "contact_no": extra_contacts.get("contact_no")[0] if extra_contacts and extra_contacts.get("contact_no") else "N/A",
             "qualified": "Maybe",
             "lead_score": 1,
             "reasoning": f"AI error: {e}",
@@ -146,3 +174,4 @@ Content:
             "red_flags": [],
             "scraped_content_preview": (markdown_content or "")[:500].replace("\n", " ") + "..."
         }
+

@@ -2,7 +2,7 @@
 from agents.llm_utils import call_llm_with_retry
 from agents.query_utils import clean_query_output
 from agents.utils import run_generic_scraper
-from typing import Callable # Added import
+from typing import Callable
 
 async def generate_twitter_query(service: str, industry: str, location: str) -> str:
     prompt = f"""

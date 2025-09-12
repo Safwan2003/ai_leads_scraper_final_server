@@ -1,3 +1,4 @@
+
 import os
 import aiomysql
 import asyncio
@@ -5,7 +6,7 @@ import json
 from typing import List, Dict, Any, Optional
 
 
-from core.config import DB_HOST, DB_PORT, DB_USER, DB_PASSWORD, DB_NAME
+from core.config import DB_HOST, DB_PORT, DB_USER, DB_PASSWORD, DB_NAME, CACHE_EXPIRATION_DAYS
 
 POOL = None
 
@@ -30,8 +31,10 @@ async def create_tables():
                 id INT AUTO_INCREMENT PRIMARY KEY,
                 company_name VARCHAR(255),
                 website VARCHAR(255) UNIQUE,
-                email VARCHAR(255),
-                phone VARCHAR(255),
+                email JSON,
+                contact_no JSON,
+                industry VARCHAR(255),
+                location VARCHAR(255),
                 qualified VARCHAR(50),
                 lead_score INT,
                 reasoning TEXT,
@@ -40,9 +43,52 @@ async def create_tables():
                 source VARCHAR(100),
                 search_tag VARCHAR(255),
                 scraped_content_preview TEXT,
-                last_updated DATETIME
+                last_updated DATETIME,
+                last_scraped DATETIME
             )
             """)
+
+            # Migration logic
+            await cur.execute("SHOW COLUMNS FROM leads LIKE 'address'")
+            if await cur.fetchone():
+                await cur.execute("ALTER TABLE leads DROP COLUMN address")
+
+            await cur.execute("SHOW COLUMNS FROM leads LIKE 'phone'")
+            if await cur.fetchone():
+                await cur.execute("ALTER TABLE leads CHANGE COLUMN phone contact_no VARCHAR(255)")
+
+            await cur.execute("SHOW COLUMNS FROM leads LIKE 'industry'")
+            if not await cur.fetchone():
+                await cur.execute("ALTER TABLE leads ADD COLUMN industry VARCHAR(255)")
+
+            await cur.execute("SHOW COLUMNS FROM leads LIKE 'location'")
+            if not await cur.fetchone():
+                await cur.execute("ALTER TABLE leads ADD COLUMN location VARCHAR(255)")
+
+            await cur.execute("SHOW COLUMNS FROM leads LIKE 'social_media_links'")
+            if await cur.fetchone():
+                await cur.execute("ALTER TABLE leads DROP COLUMN social_media_links")
+
+            await cur.execute("SHOW COLUMNS FROM leads LIKE 'company_description'")
+            if await cur.fetchone():
+                await cur.execute("ALTER TABLE leads DROP COLUMN company_description")
+
+            # Alter email and contact_no to JSON type if they are not already
+            await cur.execute("SHOW COLUMNS FROM leads LIKE 'email'")
+            email_col = await cur.fetchone()
+            if email_col and email_col[1] != 'json':
+                await cur.execute("ALTER TABLE leads MODIFY COLUMN email JSON")
+
+            await cur.execute("SHOW COLUMNS FROM leads LIKE 'contact_no'")
+            contact_no_col = await cur.fetchone()
+            if contact_no_col and contact_no_col[1] != 'json':
+                await cur.execute("ALTER TABLE leads MODIFY COLUMN contact_no JSON")
+
+            # Add last_scraped column if it doesn't exist
+            await cur.execute("SHOW COLUMNS FROM leads LIKE 'last_scraped'")
+            if not await cur.fetchone():
+                await cur.execute("ALTER TABLE leads ADD COLUMN last_scraped DATETIME")
+
             # Google Search Cache Table
             await cur.execute("""
             CREATE TABLE IF NOT EXISTS google_search_cache (
@@ -60,18 +106,22 @@ async def save_lead_to_db(lead: Dict[str, Any]):
         async with conn.cursor() as cur:
             # Using INSERT ... ON DUPLICATE KEY UPDATE for "upsert" behavior
             sql = """
-            INSERT INTO leads (company_name, website, email, phone, qualified, lead_score, reasoning, signals, red_flags, source, search_tag, scraped_content_preview, last_updated)
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+            INSERT INTO leads (company_name, website, email, contact_no, industry, location, qualified, lead_score, reasoning, signals, red_flags, source, search_tag, scraped_content_preview, last_updated)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
             ON DUPLICATE KEY UPDATE
-                company_name=VALUES(company_name), email=VALUES(email), phone=VALUES(phone), qualified=VALUES(qualified),
-                lead_score=VALUES(lead_score), reasoning=VALUES(reasoning), signals=VALUES(signals), red_flags=VALUES(red_flags),
-                source=VALUES(source), search_tag=VALUES(search_tag), scraped_content_preview=VALUES(scraped_content_preview), last_updated=VALUES(last_updated);
+                company_name=VALUES(company_name), email=VALUES(email), contact_no=VALUES(contact_no), industry=VALUES(industry), location=VALUES(location),
+                qualified=VALUES(qualified), lead_score=VALUES(lead_score), reasoning=VALUES(reasoning),
+                signals=VALUES(signals), red_flags=VALUES(red_flags), source=VALUES(source),
+                search_tag=VALUES(search_tag), scraped_content_preview=VALUES(scraped_content_preview),
+                last_updated=VALUES(last_updated);
             """
             await cur.execute(sql, (
                 lead.get("company_name"),
                 lead.get("website"),
-                lead.get("email"),
-                lead.get("phone"),
+                json.dumps(lead.get("email", [])),
+                json.dumps(lead.get("contact_no", [])),
+                lead.get("industry"),
+                lead.get("location"),
                 lead.get("qualified"),
                 lead.get("lead_score"),
                 lead.get("reasoning"),
@@ -92,6 +142,10 @@ async def load_all_leads_from_db() -> List[Dict[str, Any]]:
             rows = await cur.fetchall()
             for row in rows:
                 # Deserialize JSON fields
+                if row.get('email'):
+                    row['email'] = json.loads(row['email'])
+                if row.get('contact_no'):
+                    row['contact_no'] = json.loads(row['contact_no'])
                 if row.get('signals'):
                     row['signals'] = json.loads(row['signals'])
                 if row.get('red_flags'):
@@ -107,12 +161,52 @@ async def get_lead_by_website_from_db(website_url: str) -> Optional[Dict[str, An
             row = await cur.fetchone()
             if row:
                 # Deserialize JSON fields
+                if row.get('email'):
+                    row['email'] = json.loads(row['email'])
+                if row.get('contact_no'):
+                    row['contact_no'] = json.loads(row['contact_no'])
                 if row.get('signals'):
                     row['signals'] = json.loads(row['signals'])
                 if row.get('red_flags'):
                     row['red_flags'] = json.loads(row['red_flags'])
                 return dict(row)
     return None
+
+# --- Main entry point to initialize ---
+async def get_scraped_data_from_cache(website_url: str) -> Optional[Dict[str, Any]]:
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        async with conn.cursor(aiomysql.DictCursor) as cur:
+            # Check for cached data within the last X days
+            await cur.execute(
+                f"SELECT email, contact_no, last_scraped FROM leads WHERE website = %s AND last_scraped >= NOW() - INTERVAL {CACHE_EXPIRATION_DAYS} DAY",
+                (website_url,)
+            )
+            row = await cur.fetchone()
+            if row:
+                return {
+                    "emails": json.loads(row["email"]) if row["email"] else [],
+                    "contact_no": json.loads(row["contact_no"]) if row["contact_no"] else [],
+                    "last_scraped": row["last_scraped"]
+                }
+    return None
+
+async def save_scraped_data_to_cache(website_url: str, data: Dict[str, Any]):
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        async with conn.cursor() as cur:
+            # Use INSERT ... ON DUPLICATE KEY UPDATE to save or update cache
+            sql = """
+            INSERT INTO leads (website, email, contact_no, last_scraped, company_name, scraped_content_preview)
+            VALUES (%s, %s, %s, NOW(), %s, %s)
+            ON DUPLICATE KEY UPDATE
+                email=VALUES(email),
+                contact_no=VALUES(contact_no),
+                last_scraped=NOW(),
+                company_name=VALUES(company_name),
+                scraped_content_preview=VALUES(scraped_content_preview);
+            """
+            await cur.execute(sql, (website_url, json.dumps(data.get("emails", [])), json.dumps(data.get("contact_no", [])), data.get("company_name"), data.get("content_preview")))
 
 # --- Main entry point to initialize ---
 async def initialize_database():

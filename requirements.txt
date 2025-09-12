@@ -1,5 +1,6 @@
 litellm==1.57.3
 crawl4ai
+asyncio
 requests
 google-api-python-client
 python-dotenv
@@ -9,3 +10,4 @@ fastapi[all]
 uvicorn
 aiomysql
 pydantic<2
+beautifulsoup4
