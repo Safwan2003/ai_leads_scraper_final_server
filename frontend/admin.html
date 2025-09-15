@@ -1,0 +1,395 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Admin Panel - Lead Management</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+</head>
+<body class="bg-gray-900 text-white font-sans">
+
+    <div class="container mx-auto p-8">
+        <header class="text-center mb-12">
+            <h1 class="text-5xl font-extrabold text-white">Admin Panel</h1>
+            <p class="text-gray-400 mt-2">Manage Your Leads</p>
+        </header>
+
+        <!-- Dashboard Stats -->
+        <div id="dashboard-stats" class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-12">
+            <!-- Stats will be loaded here -->
+        </div>
+
+        <main>
+            <div class="bg-gray-800 rounded-lg shadow-lg p-8">
+                <div class="flex flex-col md:flex-row justify-between items-center mb-6 gap-4">
+                    <h2 class="text-3xl font-bold">All Leads</h2>
+                    <div class="flex items-center gap-4">
+                        <input type="text" id="filter-company-name" placeholder="Filter by Company..." class="bg-gray-700 border border-gray-600 rounded py-2 px-3 text-white">
+                        <select id="sort-by" class="bg-gray-700 border border-gray-600 rounded py-2 px-3 text-white">
+                            <option value="last_updated">Sort by Date</option>
+                            <option value="lead_score">Sort by Score</option>
+                            <option value="company_name">Sort by Name</option>
+                        </select>
+                        <button id="refresh-leads" class="bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-2 px-4 rounded-lg">Refresh</button>
+                    </div>
+                </div>
+
+                <div class="overflow-x-auto">
+                    <table class="min-w-full bg-gray-800">
+                        <thead>
+                            <tr class="bg-gray-700">
+                                <th class="py-3 px-4 text-left">ID</th>
+                                <th class="py-3 px-4 text-left">Company Name</th>
+                                <th class="py-3 px-4 text-left">Website</th>
+                                <th class="py-3 px-4 text-left">Qualified</th>
+                                <th class="py-3 px-4 text-left">Score</th>
+                                <th class="py-3 px-4 text-left">Source</th>
+                                <th class="py-3 px-4 text-left">Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody id="leads-table-body">
+                            <!-- Rows will be inserted here by JavaScript -->
+                        </tbody>
+                    </table>
+                </div>
+
+                <!-- Pagination -->
+                <div class="flex justify-between items-center mt-6">
+                    <button id="prev-page" class="bg-gray-600 hover:bg-gray-700 text-white font-bold py-2 px-4 rounded-lg">Previous</button>
+                    <span id="page-info"></span>
+                    <button id="next-page" class="bg-gray-600 hover:bg-gray-700 text-white font-bold py-2 px-4 rounded-lg">Next</button>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <!-- Toast Notification -->
+    <div id="toast" class="fixed bottom-5 right-5 bg-green-500 text-white py-2 px-4 rounded-lg shadow-lg hidden">
+        <p id="toast-message"></p>
+    </div>
+
+    <script>
+        const API_BASE_URL = 'http://127.0.0.1:8000';
+        const leadsTableBody = document.getElementById('leads-table-body');
+        const refreshButton = document.getElementById('refresh-leads');
+        const dashboardStats = document.getElementById('dashboard-stats');
+        const prevPageButton = document.getElementById('prev-page');
+        const nextPageButton = document.getElementById('next-page');
+        const pageInfo = document.getElementById('page-info');
+        const filterCompanyName = document.getElementById('filter-company-name');
+        const sortBy = document.getElementById('sort-by');
+
+        let currentPage = 1;
+        const limit = 10;
+
+        function showToast(message, isError = false) {
+            const toast = document.getElementById('toast');
+            const toastMessage = document.getElementById('toast-message');
+            toastMessage.textContent = message;
+            toast.className = `fixed bottom-5 right-5 text-white py-2 px-4 rounded-lg shadow-lg ${isError ? 'bg-red-500' : 'bg-green-500'}`;
+            toast.classList.remove('hidden');
+            setTimeout(() => {
+                toast.classList.add('hidden');
+            }, 3000);
+        }
+
+        async function fetchStats() {
+            try {
+                const response = await fetch(`${API_BASE_URL}/admin/stats`);
+                if (!response.ok) throw new Error('Failed to load stats');
+                const stats = await response.json();
+                renderStats(stats);
+            } catch (error) {
+                console.error("Error fetching stats:", error);
+                dashboardStats.innerHTML = '<p class="text-red-400">Could not load stats.</p>';
+            }
+        }
+
+        function renderStats(stats) {
+            dashboardStats.innerHTML = `
+                <div class="bg-gray-800 p-6 rounded-lg">
+                    <h3 class="text-2xl font-bold">${stats.total_leads}</h3>
+                    <p class="text-gray-400">Total Leads</p>
+                </div>
+                <div class="bg-gray-800 p-6 rounded-lg">
+                    <h3 class="text-2xl font-bold">${Object.keys(stats.leads_by_qualification).length}</h3>
+                    <p class="text-gray-400">Qualification Types</p>
+                </div>
+                <div class="bg-gray-800 p-6 rounded-lg">
+                    <h3 class="text-2xl font-bold">${Object.keys(stats.leads_by_source).length}</h3>
+                    <p class="text-gray-400">Sources</p>
+                </div>
+            `;
+        }
+
+        async function fetchLeads() {
+            const companyName = filterCompanyName.value;
+            const sort = sortBy.value;
+            const url = new URL(`${API_BASE_URL}/admin/leads`);
+            url.searchParams.append('page', currentPage);
+            url.searchParams.append('limit', limit);
+            url.searchParams.append('sort_by', sort);
+            if (companyName) {
+                url.searchParams.append('company_name', companyName);
+            }
+
+            try {
+                const response = await fetch(url);
+                if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
+                const data = await response.json();
+                renderLeads(data.leads);
+                renderPagination(data.total);
+            } catch (error) {
+                console.error("Error fetching leads:", error);
+                leadsTableBody.innerHTML = `<tr><td colspan="7" class="text-center py-4">Error loading leads.</td></tr>`;
+            }
+        }
+
+        function renderLeads(leads) {
+            leadsTableBody.innerHTML = '';
+            if (leads.length === 0) {
+                leadsTableBody.innerHTML = `<tr><td colspan="7" class="text-center py-4">No leads found.</td></tr>`;
+                return;
+            }
+            leads.forEach(lead => {
+                const row = document.createElement('tr');
+                row.innerHTML = `
+                    <td class="py-3 px-4">${lead.id}</td>
+                    <td class="py-3 px-4">${lead.company_name}</td>
+                    <td class="py-3 px-4"><a href="${lead.website}" target="_blank" class="text-indigo-400 hover:underline">${lead.website}</a></td>
+                    <td class="py-3 px-4">${lead.qualified}</td>
+                    <td class="py-3 px-4">${lead.lead_score}</td>
+                    <td class="py-3 px-4">${lead.source}</td>
+                    <td class="py-3 px-4">
+                        <button class="edit-btn bg-blue-600 hover:bg-blue-700 text-white font-bold py-1 px-3 rounded-lg" data-id="${lead.id}">Edit</button>
+                        <button class="delete-btn bg-red-600 hover:bg-red-700 text-white font-bold py-1 px-3 rounded-lg" data-id="${lead.id}">Delete</button>
+                        <button class="rescrape-btn bg-green-600 hover:bg-green-700 text-white font-bold py-1 px-3 rounded-lg" data-id="${lead.id}">Rescrape</button>
+                    </td>
+                `;
+                leadsTableBody.appendChild(row);
+            });
+        }
+
+        function renderPagination(total) {
+            const totalPages = Math.ceil(total / limit);
+            pageInfo.textContent = `Page ${currentPage} of ${totalPages}`;
+            prevPageButton.disabled = currentPage === 1;
+            nextPageButton.disabled = currentPage === totalPages;
+        }
+
+        leadsTableBody.addEventListener('click', (e) => {
+            if (e.target.classList.contains('edit-btn')) {
+                openEditModal(e.target.dataset.id);
+            }
+            if (e.target.classList.contains('delete-btn')) {
+                if (confirm('Are you sure you want to delete this lead?')) {
+                    deleteLead(e.target.dataset.id);
+                }
+            }
+            if (e.target.classList.contains('rescrape-btn')) {
+                rescrapeLead(e.target.dataset.id);
+            }
+        });
+
+        async function openEditModal(leadId) {
+            try {
+                const response = await fetch(`${API_BASE_URL}/admin/leads/${leadId}`);
+                if (!response.ok) throw new Error('Failed to load lead data');
+                const lead = await response.json();
+
+                // Defensive checks for array fields
+                const emailValue = Array.isArray(lead.email) ? lead.email.join(', ') : (lead.email || '');
+                const contactNoValue = Array.isArray(lead.contact_no) ? lead.contact_no.join(', ') : (lead.contact_no || '');
+                const signalsValue = Array.isArray(lead.signals) ? lead.signals.join(', ') : (lead.signals || '');
+                const redFlagsValue = Array.isArray(lead.red_flags) ? lead.red_flags.join(', ') : (lead.red_flags || '');
+
+                const { value: formValues, isConfirmed, isDenied } = await Swal.fire({
+                    title: 'Edit Lead',
+                    html: `
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-4 text-left">
+                            <div>
+                                <label for="swal-company-name" class="block text-gray-300 text-sm font-bold mb-1">Company Name</label>
+                                <input id="swal-company-name" class="swal2-input bg-gray-700 border border-gray-600 rounded w-full py-2 px-3 text-white" value="${lead.company_name || ''}">
+                            </div>
+                            <div>
+                                <label for="swal-website" class="block text-gray-300 text-sm font-bold mb-1">Website</label>
+                                <input id="swal-website" class="swal2-input bg-gray-700 border border-gray-600 rounded w-full py-2 px-3 text-white" value="${lead.website || ''}">
+                            </div>
+                            <div>
+                                <label for="swal-qualified" class="block text-gray-300 text-sm font-bold mb-1">Qualified</label>
+                                <select id="swal-qualified" class="swal2-input bg-gray-700 border border-gray-600 rounded w-full py-2 px-3 text-white">
+                                    <option value="Hot Lead" ${lead.qualified === 'Hot Lead' ? 'selected' : ''}>Hot Lead</option>
+                                    <option value="Strong Prospect" ${lead.qualified === 'Strong Prospect' ? 'selected' : ''}>Strong Prospect</option>
+                                    <option value="Good Fit" ${lead.qualified === 'Good Fit' ? 'selected' : ''}>Good Fit</option>
+                                    <option value="Potential" ${lead.qualified === 'Potential' ? 'selected' : ''}>Potential</option>
+                                    <option value="Low Priority" ${lead.qualified === 'Low Priority' ? 'selected' : ''}>Low Priority</option>
+                                </select>
+                            </div>
+                            <div>
+                                <label for="swal-lead-score" class="block text-gray-300 text-sm font-bold mb-1">Lead Score</label>
+                                <input id="swal-lead-score" type="number" class="swal2-input bg-gray-700 border border-gray-600 rounded w-full py-2 px-3 text-white" value="${lead.lead_score || 0}">
+                            </div>
+                            <div>
+                                <label for="swal-email" class="block text-gray-300 text-sm font-bold mb-1">Email</label>
+                                <input id="swal-email" class="swal2-input bg-gray-700 border border-gray-600 rounded w-full py-2 px-3 text-white" value="${emailValue}">
+                            </div>
+                            <div>
+                                <label for="swal-contact-no" class="block text-gray-300 text-sm font-bold mb-1">Contact No</label>
+                                <input id="swal-contact-no" class="swal2-input bg-gray-700 border border-gray-600 rounded w-full py-2 px-3 text-white" value="${contactNoValue}">
+                            </div>
+                            <div>
+                                <label for="swal-industry" class="block text-gray-300 text-sm font-bold mb-1">Industry</label>
+                                <input id="swal-industry" class="swal2-input bg-gray-700 border border-gray-600 rounded w-full py-2 px-3 text-white" value="${lead.industry || ''}">
+                            </div>
+                            <div>
+                                <label for="swal-location" class="block text-gray-300 text-sm font-bold mb-1">Location</label>
+                                <input id="swal-location" class="swal2-input bg-gray-700 border border-gray-600 rounded w-full py-2 px-3 text-white" value="${lead.location || ''}">
+                            </div>
+                            <div class="md:col-span-2">
+                                <label for="swal-reasoning" class="block text-gray-300 text-sm font-bold mb-1">Reasoning</label>
+                                <textarea id="swal-reasoning" class="swal2-textarea bg-gray-700 border border-gray-600 rounded w-full py-2 px-3 text-white" rows="3">${lead.reasoning || ''}</textarea>
+                            </div>
+                            <div class="md:col-span-2">
+                                <label for="swal-signals" class="block text-gray-300 text-sm font-bold mb-1">Signals</label>
+                                <input id="swal-signals" class="swal2-input bg-gray-700 border border-gray-600 rounded w-full py-2 px-3 text-white" value="${signalsValue}">
+                            </div>
+                            <div class="md:col-span-2">
+                                <label for="swal-red-flags" class="block text-gray-300 text-sm font-bold mb-1">Red Flags</label>
+                                <input id="swal-red-flags" class="swal2-input bg-gray-700 border border-gray-600 rounded w-full py-2 px-3 text-white" value="${redFlagsValue}">
+                            </div>
+                            <div class="md:col-span-2">
+                                <label for="swal-source" class="block text-gray-300 text-sm font-bold mb-1">Source</label>
+                                <input id="swal-source" class="swal2-input bg-gray-700 border border-gray-600 rounded w-full py-2 px-3 text-white" value="${lead.source || ''}" readonly>
+                            </div>
+                            <div class="md:col-span-2">
+                                <label for="swal-search-tag" class="block text-gray-300 text-sm font-bold mb-1">Search Tag</label>
+                                <input id="swal-search-tag" class="swal2-input bg-gray-700 border border-gray-600 rounded w-full py-2 px-3 text-white" value="${lead.search_tag || ''}" readonly>
+                            </div>
+                            <div class="md:col-span-2">
+                                <label for="swal-scraped-content-preview" class="block text-gray-300 text-sm font-bold mb-1">Scraped Content Preview</label>
+                                <textarea id="swal-scraped-content-preview" class="swal2-textarea bg-gray-700 border border-gray-600 rounded w-full py-2 px-3 text-white" rows="5" readonly>${lead.scraped_content_preview || ''}</textarea>
+                            </div>
+                            <div class="md:col-span-2">
+                                <label for="swal-last-updated" class="block text-gray-300 text-sm font-bold mb-1">Last Updated</label>
+                                <input id="swal-last-updated" class="swal2-input bg-gray-700 border border-gray-600 rounded w-full py-2 px-3 text-white" value="${lead.last_updated || ''}" readonly>
+                            </div>
+                        </div>
+                    `,
+                    focusConfirm: false,
+                    showCancelButton: true,
+                    confirmButtonText: 'Save Changes',
+                    cancelButtonText: 'Cancel',
+                    showDenyButton: true,
+                    denyButtonText: 'Rescrape Lead',
+                    customClass: {
+                        popup: 'bg-gray-800 text-white rounded-lg shadow-xl',
+                        title: 'text-white',
+                        confirmButton: 'bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-2 px-4 rounded-lg',
+                        cancelButton: 'bg-gray-600 hover:bg-gray-700 text-white font-bold py-2 px-4 rounded-lg',
+                        denyButton: 'bg-green-600 hover:bg-green-700 text-white font-bold py-2 px-4 rounded-lg'
+                    },
+                    preConfirm: () => {
+                        const updatedLead = {
+                            company_name: document.getElementById('swal-company-name').value,
+                            website: document.getElementById('swal-website').value,
+                            qualified: document.getElementById('swal-qualified').value,
+                            lead_score: parseInt(document.getElementById('swal-lead-score').value, 10),
+                            email: document.getElementById('swal-email').value.split(',').map(s => s.trim()).filter(s => s),
+                            contact_no: document.getElementById('swal-contact-no').value.split(',').map(s => s.trim()).filter(s => s),
+                            industry: document.getElementById('swal-industry').value,
+                            location: document.getElementById('swal-location').value,
+                            reasoning: document.getElementById('swal-reasoning').value,
+                            signals: document.getElementById('swal-signals').value.split(',').map(s => s.trim()).filter(s => s),
+                            red_flags: document.getElementById('swal-red-flags').value.split(',').map(s => s.trim()).filter(s => s),
+                        };
+                        return updatedLead;
+                    }
+                });
+
+                if (isConfirmed) {
+                    await updateLeadInDb(leadId, formValues);
+                } else if (isDenied) {
+                    await rescrapeLead(leadId);
+                }
+
+            } catch (error) {
+                showToast(error.message, true);
+            }
+        }
+
+        async function updateLeadInDb(leadId, updatedLead) {
+            try {
+                const response = await fetch(`${API_BASE_URL}/admin/leads/${leadId}`, {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(updatedLead)
+                });
+                if (!response.ok) throw new Error('Failed to update lead');
+                fetchLeads();
+                showToast('Lead updated successfully!');
+            } catch (error) {
+                showToast(error.message, true);
+            }
+        }
+
+        async function deleteLead(leadId) {
+            try {
+                const response = await fetch(`${API_BASE_URL}/admin/leads/${leadId}`, { method: 'DELETE' });
+                if (!response.ok) throw new Error('Failed to delete lead');
+                fetchLeads();
+                showToast('Lead deleted successfully!');
+            } catch (error) {
+                showToast(error.message, true);
+            }
+        }
+
+        async function rescrapeLead(leadId) {
+            try {
+                showToast('Starting rescrape job...', false);
+                const startResponse = await fetch(`${API_BASE_URL}/rescrape/${leadId}`, { method: 'POST' });
+                if (!startResponse.ok) throw new Error('Failed to start rescraping job');
+                const data = await startResponse.json();
+                const jobId = data.job_id;
+                showToast(`Rescrape job started: ${jobId}. Waiting for completion...`, false);
+
+                // Poll for job status
+                const pollInterval = 2000; // Poll every 2 seconds
+                let jobStatus = 'running';
+                while (jobStatus === 'running') {
+                    const statusResponse = await fetch(`${API_BASE_URL}/status/${jobId}`);
+                    if (!statusResponse.ok) throw new Error('Failed to get job status');
+                    const statusData = await statusResponse.json();
+                    jobStatus = statusData.status;
+                    if (jobStatus === 'running') {
+                        showToast(`Rescrape job ${jobId} is ${statusData.progress.toFixed(0)}% complete...`, false);
+                        await new Promise(resolve => setTimeout(resolve, pollInterval));
+                    }
+                }
+
+                if (jobStatus === 'completed') {
+                    showToast('Rescrape job completed successfully! Fetching updated lead...', false);
+                    // Re-fetch the lead data and re-open the modal
+                    await openEditModal(leadId);
+                    fetchLeads(); // Refresh the main leads table
+                } else {
+                    showToast(`Rescrape job ${jobId} failed. Check server logs.`, true);
+                }
+            } catch (error) {
+                showToast(error.message, true);
+            }
+        }
+
+        refreshButton.addEventListener('click', fetchLeads);
+        filterCompanyName.addEventListener('input', () => { currentPage = 1; fetchLeads(); });
+        sortBy.addEventListener('change', fetchLeads);
+        prevPageButton.addEventListener('click', () => { if (currentPage > 1) { currentPage--; fetchLeads(); } });
+        nextPageButton.addEventListener('click', () => { currentPage++; fetchLeads(); });
+
+        // Initial load
+        fetchStats();
+        fetchLeads();
+    </script>
+
+</body>
+</html>

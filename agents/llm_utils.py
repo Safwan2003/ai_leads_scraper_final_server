@@ -43,15 +43,23 @@ async def call_llm_with_retry(
 # -------------------------
 async def generate_ai_search_query(service: str, industry: str, location: str) -> str:
     prompt = f'''
-You are an expert lead-generation researcher.
-Your task: generate a single Google search query to find small-to-medium businesses 
-in the industry below that are likely to need help with this service.
+You are a lead generation specialist. Generate one single **Google search query** 
+that helps find businesses in the given industry and location who might need the service.
 
 Service: {service}
 Industry: {industry}
 Location: {location}
 
-Output only the final Google query string.
+---
+
+### Rules for the query:
+- Must include **business context**: ("small business" OR "local business" OR "official site" OR "company")  
+- Must include **contact intent**: ("contact" OR "about us" OR "call" OR "email" OR "need" OR "require" OR "looking for" OR "seeking")  
+- Must include **industry keyword**: "{industry}"  
+- Must include **location keyword(s)**: ("{location}" OR nearby region/city terms)  
+- Must exclude groups, communities, agencies, and influencers:  
+  -inurl:groups -inurl:community -inurl:agency -inurl:influencer -inurl:marketplace  
+- Do not include explanations, comments, or formatting — return **only the final query string**.
 '''
     try:
         resp = await call_llm_with_retry(prompt, temperature=0.45)
@@ -80,6 +88,18 @@ Generate a broader query that keeps business relevance but returns more results.
 # -------------------------
 # Qualifier
 # -------------------------
+def get_catchy_qualification(score: int) -> str:
+    """Returns a catchy qualification status based on the lead score."""
+    if score >= 90:
+        return "Hot Lead"
+    if score >= 75:
+        return "Strong Prospect"
+    if score >= 50:
+        return "Good Fit"
+    if score >= 25:
+        return "Potential"
+    return "Low Priority"
+
 async def qualify_and_score_lead(
     markdown_content: str,
     service: str,
@@ -90,13 +110,11 @@ async def qualify_and_score_lead(
     if any(k in (markdown_content or "").lower() for k in NEGATIVE_KEYWORDS):
         return {
             "company_name": "N/A",
-            "company_description": "N/A",
             "email": "N/A",
             "contact_no": "N/A",
-            "social_media_links": {},
-            "qualified": "Maybe",
+            "qualified": "Low Priority",
             "lead_score": 1,
-            "reasoning": "Contains negative keywords.",
+            "reasoning": "Contains negative keywords, indicating it's likely not a business lead.",
             "signals": [],
             "red_flags": ["negative keywords present"],
             "scraped_content_preview": (markdown_content or "")[:500].replace("\n", " ") + "..."
@@ -115,10 +133,9 @@ Location: {location}
 
 1.  **Identify the Company:** Find the company\'s name. It\'s often in the page title, headers, or footer.
 2.  **Find Contact Information:** Extract the company\'s email and phone number. Prioritize the "Extra Contacts" provided below, as they were found by a scraper.
-3.  **Qualify the Lead:** Based on the content, decide if the business is a "Yes", "Maybe", or "No" for the specified service.
-4.  **Score the Lead:** Assign a lead score from 0 to 10, where 10 is a perfect match.
-5.  **Provide Reasoning:** Briefly explain your reasoning for the qualification and score.
-6.  **Identify Signals and Red Flags:** List any positive signals (e.g., "outdated website", "no blog") or red flags (e.g., "already using a competitor", "not in the right industry").
+3.  **Score the Lead:** Assign a lead score from 0 to 100, where 100 is a perfect match for the service.
+4.  **Provide Reasoning:** Briefly explain your reasoning for the score.
+5.  **Identify Signals and Red Flags:** List any positive signals (e.g., "outdated website", "no blog") or red flags (e.g., "already using a competitor", "not in the right industry").
 
 ---
 
@@ -136,7 +153,7 @@ Contact No: {extra_contacts.get("contact_no") if extra_contacts else []}
 **Output Format:**
 
 Return a single JSON object with the following keys:
-"company_name", "email", "contact_no", "qualified", "lead_score", "reasoning", "signals", "red_flags"
+"company_name", "email", "contact_no", "lead_score", "reasoning", "signals", "red_flags"
 '''
     try:
         resp = await call_llm_with_retry(prompt, temperature=0.15, response_format={"type": "json_object"})
@@ -148,13 +165,14 @@ Return a single JSON object with the following keys:
             m = re.search(r"{{.*}}", raw, flags=re.S)
             if m: analysis = json.loads(m.group(0))
 
-        lead_score = max(0, min(10, int(analysis.get("lead_score") or 0)))
+        lead_score = max(0, min(100, int(analysis.get("lead_score") or 0)))
+        qualified_status = get_catchy_qualification(lead_score)
 
         return {
             "company_name": analysis.get("company_name") or "N/A",
             "email": analysis.get("email") or (extra_contacts.get("emails")[0] if extra_contacts and extra_contacts.get("emails") else "N/A"),
             "contact_no": analysis.get("contact_no") or (extra_contacts.get("contact_no")[0] if extra_contacts and extra_contacts.get("contact_no") else "N/A"),
-            "qualified": analysis.get("qualified") or "Maybe",
+            "qualified": qualified_status,
             "lead_score": lead_score,
             "reasoning": analysis.get("reasoning") or "",
             "signals": analysis.get("signals") or [],
@@ -174,4 +192,5 @@ Return a single JSON object with the following keys:
             "red_flags": [],
             "scraped_content_preview": (markdown_content or "")[:500].replace("\n", " ") + "..."
         }
+
 

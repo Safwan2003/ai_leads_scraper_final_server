@@ -37,24 +37,25 @@ async def save_google_search_to_cache(query: str, results: List[Dict[str, str]],
             await cur.execute(sql, (query_hash, json.dumps(results), timestamp))
 
 # --- Main Google Search Function ---
-async def google_search(query: str, max_results: int = MAX_RESULTS) -> List[Dict[str, str]]:
+async def google_search(query: str, max_results: int = MAX_RESULTS, skip_cache: bool = False) -> List[Dict[str, str]]:
     now = datetime.datetime.now(datetime.timezone.utc)
 
     # Check cache first
-    cached_entry = await get_google_search_from_cache(query)
-    if cached_entry:
-        timestamp = cached_entry["timestamp"]
-        # Ensure timestamp is a datetime object for comparison
-        if isinstance(timestamp, str):
-            timestamp = datetime.datetime.fromisoformat(timestamp).replace(tzinfo=datetime.timezone.utc)
-        elif timestamp.tzinfo is None:
-            timestamp = timestamp.replace(tzinfo=datetime.timezone.utc)
+    if not skip_cache:
+        cached_entry = await get_google_search_from_cache(query)
+        if cached_entry:
+            timestamp = cached_entry["timestamp"]
+            # Ensure timestamp is a datetime object for comparison
+            if isinstance(timestamp, str):
+                timestamp = datetime.datetime.fromisoformat(timestamp).replace(tzinfo=datetime.timezone.utc)
+            elif timestamp.tzinfo is None:
+                timestamp = timestamp.replace(tzinfo=datetime.timezone.utc)
 
-        if now - timestamp < datetime.timedelta(days=CACHE_EXPIRATION_DAYS):
-            print(f"[CACHE] Google search hit for: {query}")
-            return json.loads(cached_entry["results"])
-        else:
-            print(f"[CACHE] Stale entry for: {query}")
+            if now - timestamp < datetime.timedelta(days=CACHE_EXPIRATION_DAYS):
+                print(f"[CACHE] Google search hit for: {query}")
+                return json.loads(cached_entry["results"])
+            else:
+                print(f"[CACHE] Stale entry for: {query}")
 
     # If not in cache or stale, perform the search
     if not GOOGLE_API_KEY or not GOOGLE_CSE_ID:

@@ -20,6 +20,13 @@ async def get_pool():
         )
     return POOL
 
+async def close_pool():
+    global POOL
+    if POOL:
+        POOL.close()
+        await POOL.wait_closed()
+        POOL = None
+
 # --- Schema Definition ---
 async def create_tables():
     pool = await get_pool()
@@ -106,14 +113,14 @@ async def save_lead_to_db(lead: Dict[str, Any]):
         async with conn.cursor() as cur:
             # Using INSERT ... ON DUPLICATE KEY UPDATE for "upsert" behavior
             sql = """
-            INSERT INTO leads (company_name, website, email, contact_no, industry, location, qualified, lead_score, reasoning, signals, red_flags, source, search_tag, scraped_content_preview, last_updated)
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+            INSERT INTO leads (company_name, website, email, contact_no, industry, location, qualified, lead_score, reasoning, signals, red_flags, source, search_tag, scraped_content_preview, last_updated, last_scraped)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
             ON DUPLICATE KEY UPDATE
                 company_name=VALUES(company_name), email=VALUES(email), contact_no=VALUES(contact_no), industry=VALUES(industry), location=VALUES(location),
                 qualified=VALUES(qualified), lead_score=VALUES(lead_score), reasoning=VALUES(reasoning),
                 signals=VALUES(signals), red_flags=VALUES(red_flags), source=VALUES(source),
                 search_tag=VALUES(search_tag), scraped_content_preview=VALUES(scraped_content_preview),
-                last_updated=VALUES(last_updated);
+                last_updated=VALUES(last_updated), last_scraped=VALUES(last_scraped);
             """
             await cur.execute(sql, (
                 lead.get("company_name"),
@@ -130,15 +137,54 @@ async def save_lead_to_db(lead: Dict[str, Any]):
                 lead.get("source"),
                 lead.get("search_tag"),
                 lead.get("scraped_content_preview"),
-                lead.get("last_updated")
+                lead.get("last_updated"),
+                lead.get("last_updated")  # Using last_updated for last_scraped as well
             ))
 
-async def load_all_leads_from_db() -> List[Dict[str, Any]]:
+async def load_all_leads_from_db(
+    page: int = 1,
+    limit: int = 10,
+    sort_by: str = "last_updated",
+    sort_order: str = "DESC",
+    filters: Dict[str, Any] = None
+) -> Dict[str, Any]:
     pool = await get_pool()
     leads = []
+    offset = (page - 1) * limit
+
+    # Base query
+    base_query = "SELECT * FROM leads"
+    count_query = "SELECT COUNT(*) as total FROM leads"
+    where_clauses = []
+    params = []
+
+    if filters:
+        for key, value in filters.items():
+            if value:
+                where_clauses.append(f"{key} LIKE %s")
+                params.append(f"%{value}%")
+
+    if where_clauses:
+        base_query += " WHERE " + " AND ".join(where_clauses)
+        count_query += " WHERE " + " AND ".join(where_clauses)
+
+    # Sorting
+    if sort_by and sort_order:
+        base_query += f" ORDER BY {sort_by} {sort_order}"
+
+    # Pagination
+    base_query += " LIMIT %s OFFSET %s"
+    params.extend([limit, offset])
+
     async with pool.acquire() as conn:
         async with conn.cursor(aiomysql.DictCursor) as cur:
-            await cur.execute("SELECT * FROM leads ORDER BY last_updated DESC")
+            # Get total count
+            await cur.execute(count_query, params[:-2]) # Exclude limit and offset from count
+            total_row = await cur.fetchone()
+            total = total_row['total']
+
+            # Get paginated leads
+            await cur.execute(base_query, params)
             rows = await cur.fetchall()
             for row in rows:
                 # Deserialize JSON fields
@@ -151,7 +197,31 @@ async def load_all_leads_from_db() -> List[Dict[str, Any]]:
                 if row.get('red_flags'):
                     row['red_flags'] = json.loads(row['red_flags'])
                 leads.append(dict(row))
-    return leads
+    
+    return {"total": total, "leads": leads}
+
+async def get_leads_stats() -> Dict[str, Any]:
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        async with conn.cursor(aiomysql.DictCursor) as cur:
+            # Total leads
+            await cur.execute("SELECT COUNT(*) as total_leads FROM leads")
+            total_leads = (await cur.fetchone())['total_leads']
+
+            # Leads by qualification
+            await cur.execute("SELECT qualified, COUNT(*) as count FROM leads GROUP BY qualified")
+            leads_by_qualification = {row['qualified']: row['count'] for row in await cur.fetchall()}
+
+            # Leads by source
+            await cur.execute("SELECT source, COUNT(*) as count FROM leads GROUP BY source")
+            leads_by_source = {row['source']: row['count'] for row in await cur.fetchall()}
+
+            return {
+                "total_leads": total_leads,
+                "leads_by_qualification": leads_by_qualification,
+                "leads_by_source": leads_by_source
+            }
+
 
 async def get_lead_by_website_from_db(website_url: str) -> Optional[Dict[str, Any]]:
     pool = await get_pool()
@@ -171,6 +241,61 @@ async def get_lead_by_website_from_db(website_url: str) -> Optional[Dict[str, An
                     row['red_flags'] = json.loads(row['red_flags'])
                 return dict(row)
     return None
+
+async def get_lead_by_id_from_db(lead_id: int) -> Optional[Dict[str, Any]]:
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        async with conn.cursor(aiomysql.DictCursor) as cur:
+            await cur.execute("SELECT * FROM leads WHERE id = %s", (lead_id,))
+            row = await cur.fetchone()
+            if row:
+                # Deserialize JSON fields
+                if row.get('email'):
+                    row['email'] = json.loads(row['email'])
+                if row.get('contact_no'):
+                    row['contact_no'] = json.loads(row['contact_no'])
+                if row.get('signals'):
+                    row['signals'] = json.loads(row['signals'])
+                if row.get('red_flags'):
+                    row['red_flags'] = json.loads(row['red_flags'])
+                return dict(row)
+    return None
+
+async def update_lead_in_db(lead_id: int, lead_data: Dict[str, Any]):
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        async with conn.cursor() as cur:
+            sql = """
+            UPDATE leads
+            SET 
+                company_name = %s, 
+                website = %s, 
+                qualified = %s, 
+                lead_score = %s,
+                email = %s,
+                contact_no = %s,
+                industry = %s,
+                location = %s
+            WHERE id = %s;
+            """
+            await cur.execute(sql, (
+                lead_data.get("company_name"),
+                lead_data.get("website"),
+                lead_data.get("qualified"),
+                lead_data.get("lead_score"),
+                json.dumps(lead_data.get("email", [])),
+                json.dumps(lead_data.get("contact_no", [])),
+                lead_data.get("industry"),
+                lead_data.get("location"),
+                lead_id
+            ))
+
+async def delete_lead_from_db(lead_id: int):
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        async with conn.cursor() as cur:
+            await cur.execute("DELETE FROM leads WHERE id = %s", (lead_id,))
+
 
 # --- Main entry point to initialize ---
 async def get_scraped_data_from_cache(website_url: str) -> Optional[Dict[str, Any]]:

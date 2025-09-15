@@ -9,5 +9,7 @@ aiohttp
 fastapi[all]
 uvicorn
 aiomysql
-pydantic<2
+pydantic
 beautifulsoup4
+phonenumbers
+email_validator

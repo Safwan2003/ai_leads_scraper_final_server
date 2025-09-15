@@ -4,11 +4,17 @@ from fastapi.responses import JSONResponse, StreamingResponse, FileResponse
 from pydantic import BaseModel
 from typing import List, Dict, Any
 import asyncio
+import sys
 import csv
 import io
 import uuid
 import datetime
 import json
+
+
+
+
+
 
 # Local imports
 from agents.implementations.google_agent import run_google_scraper
@@ -17,7 +23,18 @@ from agents.implementations.linkedin_agent import run_linkedin_scraper
 from agents.implementations.twitter_agent import run_twitter_scraper
 from agents.implementations.instagram_agent import run_instagram_scraper
 from agents.implementations.freelance_agent import run_freelance_scraper
-from db.database import initialize_database, load_all_leads_from_db
+from agents.utils import rescrape_lead_by_id
+from db.database import initialize_database, load_all_leads_from_db, get_lead_by_id_from_db, update_lead_in_db, delete_lead_from_db, get_leads_stats
+
+class LeadUpdate(BaseModel):
+    company_name: str
+    website: str
+    qualified: str
+    lead_score: int
+    email: List[str] | None = None
+    contact_no: List[str] | None = None
+    industry: str | None = None
+    location: str | None = None
 
 main = FastAPI(
     title="AI Leads Scraper API",
@@ -39,6 +56,11 @@ main.add_middleware(
 async def startup_event():
     await initialize_database()
 
+@main.on_event("shutdown")
+async def shutdown_event():
+    from db.database import close_pool
+    await close_pool()
+
 # In-memory store for job statuses and results
 _job_status: Dict[str, Dict[str, Any]] = {}
 
@@ -48,11 +70,12 @@ class ScrapeRequest(BaseModel):
     industry: str
     location: str
     agents: List[str]
+    skip_cache: bool = False
 
 
 
 # --- Background Task for Scraping ---
-async def _run_scraping_job(job_id: str, service: str, industry: str, location: str, agents: List[str]):
+async def _run_scraping_job(job_id: str, service: str, industry: str, location: str, agents: List[str], skip_cache: bool = False):
     _job_status[job_id] = {
         "status": "running",
         "progress": 0,
@@ -94,7 +117,7 @@ async def _run_scraping_job(job_id: str, service: str, industry: str, location: 
         }
         for agent in agents:
             if agent in agent_map:
-                tasks.append(asyncio.create_task(agent_map[agent](service, industry, location, update_job_status)))
+                tasks.append(asyncio.create_task(agent_map[agent](service, industry, location, update_job_status, skip_cache=skip_cache)))
 
         if not tasks:
             update_job_status({"status": "info", "message": "No web scraping agents selected."})
@@ -117,8 +140,15 @@ async def _run_scraping_job(job_id: str, service: str, industry: str, location: 
 @main.post("/scrape", response_model=Dict[str, str], status_code=202)
 async def scrape_api(request_data: ScrapeRequest, background_tasks: BackgroundTasks):
     job_id = str(uuid.uuid4())
-    background_tasks.add_task(_run_scraping_job, job_id, request_data.service, request_data.industry, request_data.location, request_data.agents)
+    background_tasks.add_task(_run_scraping_job, job_id, request_data.service, request_data.industry, request_data.location, request_data.agents, request_data.skip_cache)
     return {"job_id": job_id}
+
+@main.post("/rescrape/{lead_id}", response_model=Dict[str, str], status_code=202)
+async def rescrape_api(lead_id: int, background_tasks: BackgroundTasks):
+    job_id = str(uuid.uuid4())
+    background_tasks.add_task(rescrape_lead_by_id, job_id, lead_id, _job_status)
+    return {"job_id": job_id}
+
 
 @main.get("/status/{job_id}", response_model=Dict[str, Any])
 async def get_status(job_id: str):
@@ -138,7 +168,9 @@ async def get_results(job_id: str):
 
 @main.get("/export_csv")
 async def export_csv():
-    leads = await load_all_leads_from_db()
+    # Fetch all leads, not just a page
+    data = await load_all_leads_from_db(limit=10000) # A large limit to get all leads
+    leads = data.get('leads', [])
     if not leads:
         raise HTTPException(status_code=204, detail="No leads to export")
 
@@ -172,3 +204,46 @@ async def export_csv():
         "Content-type": "text/csv",
     }
     return StreamingResponse(output, headers=headers)
+
+# --- Admin Panel Endpoints ---
+
+@main.get("/admin/leads", response_model=Dict[str, Any])
+async def get_all_leads_for_admin(
+    page: int = 1,
+    limit: int = 10,
+    sort_by: str = "last_updated",
+    sort_order: str = "DESC",
+    company_name: str = None,
+    website: str = None,
+    qualified: str = None,
+    source: str = None
+):
+    filters = {
+        "company_name": company_name,
+        "website": website,
+        "qualified": qualified,
+        "source": source
+    }
+    result = await load_all_leads_from_db(page, limit, sort_by, sort_order, filters)
+    return result
+
+@main.get("/admin/stats", response_model=Dict[str, Any])
+async def get_admin_stats():
+    stats = await get_leads_stats()
+    return stats
+
+
+@main.get("/admin/leads/{lead_id}", response_model=Dict[str, Any])
+async def get_lead_for_admin(lead_id: int):
+    lead = await get_lead_by_id_from_db(lead_id)
+    if not lead:
+        raise HTTPException(status_code=404, detail="Lead not found")
+    return lead
+
+@main.put("/admin/leads/{lead_id}", status_code=204)
+async def update_lead_for_admin(lead_id: int, lead_data: LeadUpdate):
+    await update_lead_in_db(lead_id, lead_data.dict())
+
+@main.delete("/admin/leads/{lead_id}", status_code=204)
+async def delete_lead_for_admin(lead_id: int):
+    await delete_lead_from_db(lead_id)

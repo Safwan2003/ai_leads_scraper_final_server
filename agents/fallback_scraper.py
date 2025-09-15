@@ -2,21 +2,38 @@ import re, asyncio
 from crawl4ai import AsyncWebCrawler
 from core.google_search import google_search
 from db.database import get_scraped_data_from_cache, save_scraped_data_to_cache
+from email_validator import validate_email, EmailNotValidError
+import phonenumbers
 
+# Regex (only for candidate extraction, final validation happens later)
 EMAIL_REGEX = r"[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}"
 CONTACT_NO_REGEX = r"(?:\+?\d{1,3}[-.\s]?)?\(?\d{2,4}\)?[-.\s]?\d{3,4}[-.\s]?\d{3,4}"
 
 
-def clean_contact_numbers(numbers):
-    """Remove junk like timestamps, IDs and keep only valid-looking phone numbers."""
-    cleaned = []
+def clean_emails(emails: list[str]) -> list[str]:
+    """Validate and normalize emails."""
+    valid = set()
+    for e in emails:
+        try:
+            valid_email = validate_email(e.strip(), check_deliverability=False).email
+            valid.add(valid_email.lower())
+        except EmailNotValidError:
+            continue
+    return sorted(valid)
+
+
+def clean_contact_numbers(numbers: list[str], default_region: str = "PK") -> list[str]:
+    """Validate and format phone numbers using phonenumbers."""
+    cleaned = set()
     for num in numbers:
-        num = re.sub(r"[^\d+]", "", num)  # keep digits and +
-        if len(num) < 7 or len(num) > 15:
-            continue  # reject too short/too long
-        if num.startswith("+") or num.startswith("0"):
-            cleaned.append(num)
-    return list(set(cleaned))
+        try:
+            parsed = phonenumbers.parse(num, default_region)
+            if phonenumbers.is_valid_number(parsed):
+                formatted = phonenumbers.format_number(parsed, phonenumbers.PhoneNumberFormat.E164)
+                cleaned.add(formatted)
+        except phonenumbers.NumberParseException:
+            continue
+    return sorted(cleaned)
 
 
 async def extract_from_html(url: str) -> dict:
@@ -27,16 +44,17 @@ async def extract_from_html(url: str) -> dict:
         markdown = result.markdown or ""
         combined = html + "\n" + markdown
 
+        # Extract candidates
         emails = set(re.findall(EMAIL_REGEX, combined))
         contact_no = set(re.findall(CONTACT_NO_REGEX, combined))
 
         # Also catch mailto: and tel:
-        emails.update(re.findall(r'href=[\'"]mailto:([^\'"]+)', html))
-        contact_no.update(re.findall(r'href=[\'"]tel:([^\'"]+)', html))
+        emails.update(re.findall(r'href=["\']mailto:([^"\']+)', html))
+        contact_no.update(re.findall(r'href=["\']tel:([^"\']+)', html))
 
         return {
-            "emails": list(emails),
-            "contact_no": clean_contact_numbers(contact_no),
+            "emails": clean_emails(list(emails)),
+            "contact_no": clean_contact_numbers(list(contact_no)),
             "markdown": markdown,
         }
 
@@ -52,12 +70,12 @@ async def extract_from_google(company_name: str, website: str) -> dict:
     for q in queries:
         results = await google_search(q, max_results=5)
         for r in results:
-            snippet = r.get("snippet", "") + " " + r.get("url", "")
+            snippet = (r.get("snippet") or "") + " " + (r.get("url") or "")
             emails.update(re.findall(EMAIL_REGEX, snippet))
             contact_no.update(re.findall(CONTACT_NO_REGEX, snippet))
     return {
-        "emails": list(emails),
-        "contact_no": clean_contact_numbers(contact_no),
+        "emails": clean_emails(list(emails)),
+        "contact_no": clean_contact_numbers(list(contact_no)),
     }
 
 
@@ -77,13 +95,13 @@ async def extract_from_contact_pages(base_url: str) -> dict:
                 found_contact_no.update(re.findall(CONTACT_NO_REGEX, html))
 
                 # Capture mailto/tel links
-                found_emails.update(re.findall(r'href=[\'"]mailto:([^\'"]+)', html))
-                found_contact_no.update(re.findall(r'href=[\'"]tel:([^\'"]+)', html))
+                found_emails.update(re.findall(r'href=["\']mailto:([^"\']+)', html))
+                found_contact_no.update(re.findall(r'href=["\']tel:([^"\']+)', html))
             except:
                 continue
     return {
-        "emails": list(found_emails),
-        "contact_no": clean_contact_numbers(found_contact_no),
+        "emails": clean_emails(list(found_emails)),
+        "contact_no": clean_contact_numbers(list(found_contact_no)),
     }
 
 
@@ -98,39 +116,39 @@ async def initial_scrape(url: str) -> dict:
         emails = set(re.findall(EMAIL_REGEX, combined))
         contact_no = set(re.findall(CONTACT_NO_REGEX, combined))
 
-        emails.update(re.findall(r'href=["\"]mailto:([^"\\]+)', html))
-        contact_no.update(re.findall(r'href=["\"]tel:([^"\\]+)', html))
+        emails.update(re.findall(r'href=["\']mailto:([^"\']+)', html))
+        contact_no.update(re.findall(r'href=["\']tel:([^"\']+)', html))
 
         return {
-            "emails": list(emails),
-            "contact_no": clean_contact_numbers(contact_no),
+            "emails": clean_emails(list(emails)),
+            "contact_no": clean_contact_numbers(list(contact_no)),
             "markdown": markdown,
         }
 
 
 async def enrich_lead(url: str, company_name: str = "") -> dict:
     """Enriches a lead with missing info using deep scraping techniques."""
-    final_data = {"emails": [], "contact_no": []}
+    final_data = {"emails": set(), "contact_no": set()}
 
     # Step 1: Deep scrape the main URL with Playwright
     html_data = await extract_from_html(url)
-    final_data["emails"].extend(html_data["emails"])
-    final_data["contact_no"].extend(html_data["contact_no"])
+    final_data["emails"].update(html_data["emails"])
+    final_data["contact_no"].update(html_data["contact_no"])
 
     # Step 2: Google dork for contacts if still missing
     if not final_data["emails"] or not final_data["contact_no"]:
         dork_data = await extract_from_google(company_name, url)
-        final_data["emails"].extend(dork_data["emails"])
-        final_data["contact_no"].extend(dork_data["contact_no"])
+        final_data["emails"].update(dork_data["emails"])
+        final_data["contact_no"].update(dork_data["contact_no"])
 
     # Step 3: Crawl contact/about pages with Playwright if still missing
     if not final_data["emails"] or not final_data["contact_no"]:
         contact_data = await extract_from_contact_pages(url)
-        final_data["emails"].extend(contact_data["emails"])
-        final_data["contact_no"].extend(contact_data["contact_no"])
+        final_data["emails"].update(contact_data["emails"])
+        final_data["contact_no"].update(contact_data["contact_no"])
 
     # Final cleanup
-    final_data["emails"] = list(set(final_data["emails"]))
-    final_data["contact_no"] = clean_contact_numbers(final_data["contact_no"])
-
-    return final_data
+    return {
+        "emails": clean_emails(list(final_data["emails"])),
+        "contact_no": clean_contact_numbers(list(final_data["contact_no"])),
+    }

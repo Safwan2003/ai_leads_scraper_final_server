@@ -30,12 +30,13 @@ Rules for the query:
         raw = raw.split("\n")[-1].strip()
     return clean_query_output(raw, service, industry, location, "facebook.com")
 
-async def run_facebook_scraper(service: str, industry: str, location: str, callback: Callable):
+async def run_facebook_scraper(service: str, industry: str, location: str, callback: Callable, skip_cache: bool = False):
     await run_generic_scraper(
         generate_facebook_query,
         service,
         industry,
         location,
         "Facebook",
-        callback
+        callback,
+        skip_cache=skip_cache
     )

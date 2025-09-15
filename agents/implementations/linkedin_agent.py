@@ -34,12 +34,13 @@ Rules for the query:
 
     return clean_query_output(raw, service, industry, location, "linkedin.com")
 
-async def run_linkedin_scraper(service: str, industry: str, location: str, callback: Callable):
+async def run_linkedin_scraper(service: str, industry: str, location: str, callback: Callable, skip_cache: bool = False):
     await run_generic_scraper(
         generate_linkedin_query,
         service,
         industry,
         location,
         "LinkedIn",
-        callback
+        callback,
+        skip_cache=skip_cache
     )
