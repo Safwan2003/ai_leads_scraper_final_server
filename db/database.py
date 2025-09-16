@@ -49,13 +49,18 @@ async def create_tables():
                 red_flags JSON,
                 source VARCHAR(100),
                 search_tag VARCHAR(255),
+                status VARCHAR(50) DEFAULT 'New',
                 scraped_content_preview TEXT,
                 last_updated DATETIME,
                 last_scraped DATETIME
             )
             """)
 
-            # Migration logic
+            # --- Migration logic ---
+            # Add status column if it doesn't exist
+            await cur.execute("SHOW COLUMNS FROM leads LIKE 'status'")
+            if not await cur.fetchone():
+                await cur.execute("ALTER TABLE leads ADD COLUMN status VARCHAR(50) DEFAULT 'New'")
             await cur.execute("SHOW COLUMNS FROM leads LIKE 'address'")
             if await cur.fetchone():
                 await cur.execute("ALTER TABLE leads DROP COLUMN address")
@@ -113,14 +118,14 @@ async def save_lead_to_db(lead: Dict[str, Any]):
         async with conn.cursor() as cur:
             # Using INSERT ... ON DUPLICATE KEY UPDATE for "upsert" behavior
             sql = """
-            INSERT INTO leads (company_name, website, email, contact_no, industry, location, qualified, lead_score, reasoning, signals, red_flags, source, search_tag, scraped_content_preview, last_updated, last_scraped)
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+            INSERT INTO leads (company_name, website, email, contact_no, industry, location, qualified, lead_score, reasoning, signals, red_flags, source, search_tag, scraped_content_preview, last_updated, last_scraped, status)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
             ON DUPLICATE KEY UPDATE
                 company_name=VALUES(company_name), email=VALUES(email), contact_no=VALUES(contact_no), industry=VALUES(industry), location=VALUES(location),
                 qualified=VALUES(qualified), lead_score=VALUES(lead_score), reasoning=VALUES(reasoning),
                 signals=VALUES(signals), red_flags=VALUES(red_flags), source=VALUES(source),
                 search_tag=VALUES(search_tag), scraped_content_preview=VALUES(scraped_content_preview),
-                last_updated=VALUES(last_updated), last_scraped=VALUES(last_scraped);
+                last_updated=VALUES(last_updated), last_scraped=VALUES(last_scraped), status=VALUES(status);
             """
             await cur.execute(sql, (
                 lead.get("company_name"),
@@ -138,7 +143,8 @@ async def save_lead_to_db(lead: Dict[str, Any]):
                 lead.get("search_tag"),
                 lead.get("scraped_content_preview"),
                 lead.get("last_updated"),
-                lead.get("last_updated")  # Using last_updated for last_scraped as well
+                lead.get("last_updated"),  # Using last_updated for last_scraped as well
+                lead.get("status", "New")
             ))
 
 async def load_all_leads_from_db(
@@ -159,10 +165,24 @@ async def load_all_leads_from_db(
     params = []
 
     if filters:
-        for key, value in filters.items():
-            if value:
-                where_clauses.append(f"{key} LIKE %s")
-                params.append(f"%{value}%")
+        if filters.get("company_name"):
+            where_clauses.append("company_name LIKE %s")
+            params.append(f'%{filters.get("company_name")}%')
+        if filters.get("source"):
+            where_clauses.append("source = %s")
+            params.append(filters.get("source"))
+        if filters.get("qualified"):
+            where_clauses.append("qualified = %s")
+            params.append(filters.get("qualified"))
+        if filters.get("min_score"):
+            where_clauses.append("lead_score >= %s")
+            params.append(int(filters.get("min_score")))
+        if filters.get("start_date"):
+            where_clauses.append("last_updated >= %s")
+            params.append(filters.get("start_date"))
+        if filters.get("end_date"):
+            where_clauses.append("last_updated <= %s")
+            params.append(filters.get("end_date"))
 
     if where_clauses:
         base_query += " WHERE " + " AND ".join(where_clauses)
@@ -275,7 +295,8 @@ async def update_lead_in_db(lead_id: int, lead_data: Dict[str, Any]):
                 email = %s,
                 contact_no = %s,
                 industry = %s,
-                location = %s
+                location = %s,
+                status = %s
             WHERE id = %s;
             """
             await cur.execute(sql, (
@@ -287,6 +308,7 @@ async def update_lead_in_db(lead_id: int, lead_data: Dict[str, Any]):
                 json.dumps(lead_data.get("contact_no", [])),
                 lead_data.get("industry"),
                 lead_data.get("location"),
+                lead_data.get("status"),
                 lead_id
             ))
 
@@ -295,6 +317,25 @@ async def delete_lead_from_db(lead_id: int):
     async with pool.acquire() as conn:
         async with conn.cursor() as cur:
             await cur.execute("DELETE FROM leads WHERE id = %s", (lead_id,))
+
+async def bulk_delete_leads(lead_ids: List[int]):
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        async with conn.cursor() as cur:
+            # Using a format string to create placeholders for the IN clause
+            placeholders = ', '.join(['%s'] * len(lead_ids))
+            sql = f"DELETE FROM leads WHERE id IN ({placeholders})"
+            await cur.execute(sql, lead_ids)
+
+async def bulk_update_lead_status(lead_ids: List[int], status: str):
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        async with conn.cursor() as cur:
+            placeholders = ', '.join(['%s'] * len(lead_ids))
+            sql = f"UPDATE leads SET status = %s WHERE id IN ({placeholders})"
+            # The status is the first parameter, followed by the list of IDs
+            await cur.execute(sql, [status] + lead_ids)
+
 
 
 # --- Main entry point to initialize ---

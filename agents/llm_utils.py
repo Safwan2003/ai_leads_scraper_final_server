@@ -57,8 +57,9 @@ Location: {location}
 - Must include **contact intent**: ("contact" OR "about us" OR "call" OR "email" OR "need" OR "require" OR "looking for" OR "seeking")  
 - Must include **industry keyword**: "{industry}"  
 - Must include **location keyword(s)**: ("{location}" OR nearby region/city terms)  
-- Must exclude groups, communities, agencies, and influencers:  
-  -inurl:groups -inurl:community -inurl:agency -inurl:influencer -inurl:marketplace  
+-  Must exclude groups, communities, agencies, influencers, marketplaces, and Reddit:  
+  -inurl:groups -inurl:community -inurl:agency -inurl:influencer -inurl:marketplace -site:reddit.com
+
 - Do not include explanations, comments, or formatting — return **only the final query string**.
 '''
     try:
@@ -207,6 +208,5 @@ The value for "contact_no" must be either a valid E.164 formatted string or "N/A
             "red_flags": [],
             "scraped_content_preview": (markdown_content or "")[:500].replace("\n", " ") + "..."
         }
-
 
 

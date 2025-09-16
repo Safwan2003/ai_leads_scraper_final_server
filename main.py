@@ -24,7 +24,11 @@ from agents.implementations.twitter_agent import run_twitter_scraper
 from agents.implementations.instagram_agent import run_instagram_scraper
 from agents.implementations.freelance_agent import run_freelance_scraper
 from agents.utils import rescrape_lead_by_id
-from db.database import initialize_database, load_all_leads_from_db, get_lead_by_id_from_db, update_lead_in_db, delete_lead_from_db, get_leads_stats
+from db.database import (
+    initialize_database, load_all_leads_from_db, get_lead_by_id_from_db, 
+    update_lead_in_db, delete_lead_from_db, get_leads_stats,
+    bulk_delete_leads, bulk_update_lead_status
+)
 
 class LeadUpdate(BaseModel):
     company_name: str
@@ -35,6 +39,12 @@ class LeadUpdate(BaseModel):
     contact_no: List[str] | None = None
     industry: str | None = None
     location: str | None = None
+    status: str | None = None
+
+class BulkUpdateRequest(BaseModel):
+    lead_ids: List[int]
+    action: str
+    value: str | None = None
 
 main = FastAPI(
     title="AI Leads Scraper API",
@@ -216,13 +226,19 @@ async def get_all_leads_for_admin(
     company_name: str = None,
     website: str = None,
     qualified: str = None,
-    source: str = None
+    source: str = None,
+    start_date: str = None,
+    end_date: str = None,
+    min_score: int = None
 ):
     filters = {
         "company_name": company_name,
         "website": website,
         "qualified": qualified,
-        "source": source
+        "source": source,
+        "start_date": start_date,
+        "end_date": end_date,
+        "min_score": min_score
     }
     result = await load_all_leads_from_db(page, limit, sort_by, sort_order, filters)
     return result
@@ -232,6 +248,21 @@ async def get_admin_stats():
     stats = await get_leads_stats()
     return stats
 
+@main.post("/admin/bulk-actions/leads", status_code=200)
+async def bulk_update_leads_for_admin(request: BulkUpdateRequest):
+    if not request.lead_ids:
+        raise HTTPException(status_code=400, detail="No lead IDs provided")
+
+    if request.action == "delete":
+        await bulk_delete_leads(request.lead_ids)
+        return {"message": "Leads deleted successfully"}
+    
+    if request.action.startswith("set_status_"):
+        status = request.action.replace("set_status_", "")
+        await bulk_update_lead_status(request.lead_ids, status)
+        return {"message": f"Leads status updated to {status}"}
+
+    raise HTTPException(status_code=400, detail="Invalid bulk action")
 
 @main.get("/admin/leads/{lead_id}", response_model=Dict[str, Any])
 async def get_lead_for_admin(lead_id: int):
