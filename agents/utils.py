@@ -47,11 +47,8 @@ def post_process_lead(lead: Dict[str, Any], url: str, company_name_hint: str = "
     elif isinstance(lead.get("email"), str) and lead["email"] != "N/A":
         lead["email"] = clean_emails([lead["email"]])
 
-    # ✅ Clean and normalize contact numbers
-    if isinstance(lead.get("contact_no"), list):
-        lead["contact_no"] = clean_contact_numbers(lead["contact_no"])
-    elif isinstance(lead.get("contact_no"), str) and lead["contact_no"] != "N/A":
-        lead["contact_no"] = clean_contact_numbers([lead["contact_no"]])
+    # The LLM now returns a final, formatted string or N/A for contact_no.
+    # No further cleaning is needed for it.
 
     return lead
 
@@ -152,11 +149,11 @@ async def run_generic_scraper(
             lead["location"] = location
             lead["last_updated"] = datetime.datetime.now(datetime.timezone.utc).isoformat()
 
-            # Update email and contact_no from fallback_contacts if AI missed them
+            # Fallback for email if AI misses it, but scraper found a valid one.
             if (lead.get("email") == "N/A" or not lead.get("email")) and fallback_contacts.get("emails"):
                 lead["email"] = fallback_contacts["emails"]
-            if (lead.get("contact_no") == "N/A" or not lead.get("contact_no")) and fallback_contacts.get("contact_no"):
-                lead["contact_no"] = fallback_contacts["contact_no"]
+
+            # The LLM is now the single source of truth for contact_no. No fallback is needed.
 
             await save_lead_to_db(lead)
             callback({"status": "lead", "lead": lead})

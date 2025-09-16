@@ -3,7 +3,7 @@ from crawl4ai import AsyncWebCrawler
 from core.google_search import google_search
 from db.database import get_scraped_data_from_cache, save_scraped_data_to_cache
 from email_validator import validate_email, EmailNotValidError
-import phonenumbers
+
 
 # Regex (only for candidate extraction, final validation happens later)
 EMAIL_REGEX = r"[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}"
@@ -22,17 +22,14 @@ def clean_emails(emails: list[str]) -> list[str]:
     return sorted(valid)
 
 
-def clean_contact_numbers(numbers: list[str], default_region: str = "PK") -> list[str]:
-    """Validate and format phone numbers using phonenumbers."""
+def clean_contact_numbers(numbers: list[str]) -> list[str]:
+    """Simply cleans and de-duplicates raw phone number strings."""
     cleaned = set()
     for num in numbers:
-        try:
-            parsed = phonenumbers.parse(num, default_region)
-            if phonenumbers.is_valid_number(parsed):
-                formatted = phonenumbers.format_number(parsed, phonenumbers.PhoneNumberFormat.E164)
-                cleaned.add(formatted)
-        except phonenumbers.NumberParseException:
-            continue
+        # Basic cleaning: remove whitespace and common decorative characters
+        cleaned_num = re.sub(r'[\s\-().]', '', num)
+        if cleaned_num:
+            cleaned.add(num.strip()) # Add the original stripped num
     return sorted(cleaned)
 
 

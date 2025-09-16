@@ -123,40 +123,44 @@ async def qualify_and_score_lead(
     prompt = f'''
 You are an expert sales analyst. Your task is to analyze the provided website content and determine if the business is a potential lead for the given service.
 
-Service: {service}
-Industry: {industry}
-Location: {location}
+**LEAD CONTEXT:**
+- Service Needed: {service}
+- Industry: {industry}
+- Target Location: {location}
 
 ---
 
-**Instructions:**
-
-1.  **Identify the Company:** Find the company\'s name. It\'s often in the page title, headers, or footer.
-2.  **Find Contact Information:** Extract the company\'s email and phone number. Prioritize the "Extra Contacts" provided below, as they were found by a scraper.
-3.  **Score the Lead:** Assign a lead score from 0 to 100, where 100 is a perfect match for the service.
-4.  **Provide Reasoning:** Briefly explain your reasoning for the score.
-5.  **Identify Signals and Red Flags:** List any positive signals (e.g., "outdated website", "no blog") or red flags (e.g., "already using a competitor", "not in the right industry").
-
----
-
-**Extra Contacts (from scraping):**
-Emails: {extra_contacts.get("emails") if extra_contacts else []}
-Contact No: {extra_contacts.get("contact_no") if extra_contacts else []}
-
----
-
-**Content to Analyze:**
+**RAW SCRAPED DATA:**
+- Scraped Emails: {extra_contacts.get("emails") if extra_contacts else []}
+- Scraped Phone Numbers: {extra_contacts.get("contact_no") if extra_contacts else []}
+- Website Content:
 {(markdown_content or '')[:4000]}
 
 ---
 
-**Output Format:**
+**INSTRUCTIONS:**
 
-Return a single JSON object with the following keys:
+1.  **Analyze and Score:** Based on all the data, determine if this is a good lead. Assign a lead score from 0 to 100.
+2.  **Identify Company Name:** Extract the company's name.
+3.  **Extract Best Email:** From the "Scraped Emails" list and content, select the single best contact email.
+4.  **Validate and Select Best Phone Number:** This is a critical task.
+    - Examine the "Scraped Phone Numbers" list.
+    - Use the "Target Location" ({location}) to determine which number is the most relevant. For example, if the location is "London", a UK number is more relevant than a US number.
+    - Validate the chosen number. It must be a real, valid phone number.
+    - Format the final, validated number into the international E.164 standard (e.g., +14155552671).
+    - If no valid, relevant phone number can be found, you MUST return "N/A".
+5.  **Provide Reasoning:** Briefly explain your reasoning for the score.
+6.  **Identify Signals and Red Flags:** List positive buying signals or negative red flags.
+
+---
+
+**OUTPUT FORMAT:**
+Return a single, minified JSON object with the following keys:
 "company_name", "email", "contact_no", "lead_score", "reasoning", "signals", "red_flags"
+The value for "contact_no" must be either a valid E.164 formatted string or "N/A".
 '''
     try:
-        resp = await call_llm_with_retry(prompt, temperature=0.15, response_format={"type": "json_object"})
+        resp = await call_llm_with_retry(prompt, temperature=0.1, response_format={"type": "json_object"})
         raw = resp.choices[0].message.content.strip()
         analysis = {}
         try:
@@ -168,10 +172,21 @@ Return a single JSON object with the following keys:
         lead_score = max(0, min(100, int(analysis.get("lead_score") or 0)))
         qualified_status = get_catchy_qualification(lead_score)
 
+        # The LLM is now responsible for returning a clean email and contact number or "N/A"
+        final_email = analysis.get("email") or "N/A"
+        if isinstance(final_email, list):
+             final_email = final_email[0] if final_email else "N/A"
+
+
+        final_contact_no = analysis.get("contact_no") or "N/A"
+        if isinstance(final_contact_no, list):
+            final_contact_no = final_contact_no[0] if final_contact_no else "N/A"
+
+
         return {
             "company_name": analysis.get("company_name") or "N/A",
-            "email": analysis.get("email") or (extra_contacts.get("emails")[0] if extra_contacts and extra_contacts.get("emails") else "N/A"),
-            "contact_no": analysis.get("contact_no") or (extra_contacts.get("contact_no")[0] if extra_contacts and extra_contacts.get("contact_no") else "N/A"),
+            "email": final_email,
+            "contact_no": final_contact_no,
             "qualified": qualified_status,
             "lead_score": lead_score,
             "reasoning": analysis.get("reasoning") or "",
@@ -183,8 +198,8 @@ Return a single JSON object with the following keys:
         print(f"Error during qualification: {e}")
         return {
             "company_name": "N/A",
-            "email": extra_contacts.get("emails")[0] if extra_contacts and extra_contacts.get("emails") else "N/A",
-            "contact_no": extra_contacts.get("contact_no")[0] if extra_contacts and extra_contacts.get("contact_no") else "N/A",
+            "email": "N/A",
+            "contact_no": "N/A",
             "qualified": "Maybe",
             "lead_score": 1,
             "reasoning": f"AI error: {e}",
@@ -192,5 +207,6 @@ Return a single JSON object with the following keys:
             "red_flags": [],
             "scraped_content_preview": (markdown_content or "")[:500].replace("\n", " ") + "..."
         }
+
 
 

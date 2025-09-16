@@ -6,13 +6,14 @@
     <title>Admin Panel - Lead Management</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
 </head>
 <body class="bg-gray-900 text-white font-sans">
 
     <div class="container mx-auto p-8">
-        <header class="text-center mb-12">
-            <h1 class="text-5xl font-extrabold text-white">Admin Panel</h1>
-            <p class="text-gray-400 mt-2">Manage Your Leads</p>
+        <header class="text-center mb-12 bg-gray-800 p-6 rounded-lg shadow-lg">
+            <h1 class="text-5xl font-extrabold text-indigo-400">Admin Panel</h1>
+            <p class="text-gray-300 mt-2 text-lg">Manage Your Leads Efficiently</p>
         </header>
 
         <!-- Dashboard Stats -->
@@ -25,30 +26,30 @@
                 <div class="flex flex-col md:flex-row justify-between items-center mb-6 gap-4">
                     <h2 class="text-3xl font-bold">All Leads</h2>
                     <div class="flex items-center gap-4">
-                        <input type="text" id="filter-company-name" placeholder="Filter by Company..." class="bg-gray-700 border border-gray-600 rounded py-2 px-3 text-white">
-                        <select id="sort-by" class="bg-gray-700 border border-gray-600 rounded py-2 px-3 text-white">
+                        <input type="text" id="filter-company-name" placeholder="Filter by Company..." class="bg-gray-700 border border-gray-600 rounded-lg py-2 px-3 text-white focus:outline-none focus:border-indigo-500 transition-colors duration-200">
+                        <select id="sort-by" class="bg-gray-700 border border-gray-600 rounded-lg py-2 px-3 text-white focus:outline-none focus:border-indigo-500 transition-colors duration-200">
                             <option value="last_updated">Sort by Date</option>
                             <option value="lead_score">Sort by Score</option>
                             <option value="company_name">Sort by Name</option>
                         </select>
-                        <button id="refresh-leads" class="bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-2 px-4 rounded-lg">Refresh</button>
+                        <button id="refresh-leads" class="bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-2 px-4 rounded-lg transition-colors duration-200"><i class="fas fa-sync-alt"></i> Refresh</button>
                     </div>
                 </div>
 
                 <div class="overflow-x-auto">
                     <table class="min-w-full bg-gray-800">
                         <thead>
-                            <tr class="bg-gray-700">
-                                <th class="py-3 px-4 text-left">ID</th>
-                                <th class="py-3 px-4 text-left">Company Name</th>
-                                <th class="py-3 px-4 text-left">Website</th>
-                                <th class="py-3 px-4 text-left">Qualified</th>
-                                <th class="py-3 px-4 text-left">Score</th>
-                                <th class="py-3 px-4 text-left">Source</th>
-                                <th class="py-3 px-4 text-left">Actions</th>
+                            <tr class="bg-gray-700 text-indigo-300 uppercase text-sm leading-normal">
+                                <th class="py-3 px-6 text-left">ID</th>
+                                <th class="py-3 px-6 text-left">Company Name</th>
+                                <th class="py-3 px-6 text-left">Website</th>
+                                <th class="py-3 px-6 text-left">Qualified</th>
+                                <th class="py-3 px-6 text-left">Score</th>
+                                <th class="py-3 px-6 text-left">Source</th>
+                                <th class="py-3 px-6 text-left">Actions</th>
                             </tr>
                         </thead>
-                        <tbody id="leads-table-body">
+                        <tbody id="leads-table-body" class="text-gray-300 text-sm font-light">
                             <!-- Rows will be inserted here by JavaScript -->
                         </tbody>
                     </table>
@@ -56,9 +57,9 @@
 
                 <!-- Pagination -->
                 <div class="flex justify-between items-center mt-6">
-                    <button id="prev-page" class="bg-gray-600 hover:bg-gray-700 text-white font-bold py-2 px-4 rounded-lg">Previous</button>
-                    <span id="page-info"></span>
-                    <button id="next-page" class="bg-gray-600 hover:bg-gray-700 text-white font-bold py-2 px-4 rounded-lg">Next</button>
+                    <button id="prev-page" class="bg-gray-600 hover:bg-gray-700 text-white font-bold py-2 px-4 rounded-lg transition-colors duration-200 disabled:opacity-50 disabled:cursor-not-allowed"><i class="fas fa-arrow-left"></i> Previous</button>
+                    <span id="page-info" class="text-gray-400 text-sm"></span>
+                    <button id="next-page" class="bg-gray-600 hover:bg-gray-700 text-white font-bold py-2 px-4 rounded-lg transition-colors duration-200 disabled:opacity-50 disabled:cursor-not-allowed">Next <i class="fas fa-arrow-right"></i></button>
                 </div>
             </div>
         </main>
@@ -108,16 +109,16 @@
 
         function renderStats(stats) {
             dashboardStats.innerHTML = `
-                <div class="bg-gray-800 p-6 rounded-lg">
-                    <h3 class="text-2xl font-bold">${stats.total_leads}</h3>
+                <div class="bg-gray-800 p-6 rounded-lg border border-gray-700 hover:border-indigo-500 transition-all duration-300">
+                    <h3 class="text-2xl font-bold text-indigo-400">${stats.total_leads}</h3>
                     <p class="text-gray-400">Total Leads</p>
                 </div>
-                <div class="bg-gray-800 p-6 rounded-lg">
-                    <h3 class="text-2xl font-bold">${Object.keys(stats.leads_by_qualification).length}</h3>
+                <div class="bg-gray-800 p-6 rounded-lg border border-gray-700 hover:border-indigo-500 transition-all duration-300">
+                    <h3 class="text-2xl font-bold text-indigo-400">${Object.keys(stats.leads_by_qualification).length}</h3>
                     <p class="text-gray-400">Qualification Types</p>
                 </div>
-                <div class="bg-gray-800 p-6 rounded-lg">
-                    <h3 class="text-2xl font-bold">${Object.keys(stats.leads_by_source).length}</h3>
+                <div class="bg-gray-800 p-6 rounded-lg border border-gray-700 hover:border-indigo-500 transition-all duration-300">
+                    <h3 class="text-2xl font-bold text-indigo-400">${Object.keys(stats.leads_by_source).length}</h3>
                     <p class="text-gray-400">Sources</p>
                 </div>
             `;
@@ -154,17 +155,18 @@
             }
             leads.forEach(lead => {
                 const row = document.createElement('tr');
+                row.classList.add('border-b', 'border-gray-700', 'hover:bg-gray-700', 'transition-colors', 'duration-200');
                 row.innerHTML = `
-                    <td class="py-3 px-4">${lead.id}</td>
-                    <td class="py-3 px-4">${lead.company_name}</td>
-                    <td class="py-3 px-4"><a href="${lead.website}" target="_blank" class="text-indigo-400 hover:underline">${lead.website}</a></td>
-                    <td class="py-3 px-4">${lead.qualified}</td>
-                    <td class="py-3 px-4">${lead.lead_score}</td>
-                    <td class="py-3 px-4">${lead.source}</td>
-                    <td class="py-3 px-4">
-                        <button class="edit-btn bg-blue-600 hover:bg-blue-700 text-white font-bold py-1 px-3 rounded-lg" data-id="${lead.id}">Edit</button>
-                        <button class="delete-btn bg-red-600 hover:bg-red-700 text-white font-bold py-1 px-3 rounded-lg" data-id="${lead.id}">Delete</button>
-                        <button class="rescrape-btn bg-green-600 hover:bg-green-700 text-white font-bold py-1 px-3 rounded-lg" data-id="${lead.id}">Rescrape</button>
+                    <td class="py-3 px-6 whitespace-nowrap">${lead.id}</td>
+                    <td class="py-3 px-6 whitespace-nowrap">${lead.company_name}</td>
+                    <td class="py-3 px-6 whitespace-nowrap"><a href="${lead.website}" target="_blank" class="text-indigo-400 hover:underline">${lead.website}</a></td>
+                    <td class="py-3 px-6 whitespace-nowrap">${lead.qualified}</td>
+                    <td class="py-3 px-6 whitespace-nowrap">${lead.lead_score}</td>
+                    <td class="py-3 px-6 whitespace-nowrap">${lead.source}</td>
+                    <td class="py-3 px-6 whitespace-nowrap">
+                        <button class="edit-btn bg-blue-600 hover:bg-blue-700 text-white font-bold py-1 px-3 rounded-lg" data-id="${lead.id}" title="Edit"><i class="fas fa-edit"></i></button>
+                        <button class="delete-btn bg-red-600 hover:bg-red-700 text-white font-bold py-1 px-3 rounded-lg ml-2" data-id="${lead.id}" title="Delete"><i class="fas fa-trash-alt"></i></button>
+                        <button class="rescrape-btn bg-green-600 hover:bg-green-700 text-white font-bold py-1 px-3 rounded-lg ml-2" data-id="${lead.id}" title="Rescrape"><i class="fas fa-sync-alt"></i></button>
                     </td>
                 `;
                 leadsTableBody.appendChild(row);
