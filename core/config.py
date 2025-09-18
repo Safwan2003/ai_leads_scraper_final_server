@@ -11,7 +11,7 @@ GOOGLE_CSE_ID = os.getenv("CSE_ID")
 
 # LiteLLM (Groq/OpenRouter) API Keys
 litellm.api_key = os.getenv("GROQ_API_KEY")
-litellm.api_base = "https://openrouter.ai/api/v1"
+# litellm.api_base = "https://openrouter.ai/api/v1"
 
 # Database Configuration
 DB_HOST = os.getenv("DB_HOST", "localhost")

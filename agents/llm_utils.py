@@ -201,12 +201,11 @@ The value for "contact_no" must be either a valid E.164 formatted string or "N/A
             "company_name": "N/A",
             "email": "N/A",
             "contact_no": "N/A",
-            "qualified": "Maybe",
+            "qualified": "AI Error",
             "lead_score": 1,
             "reasoning": f"AI error: {e}",
             "signals": [],
             "red_flags": [],
             "scraped_content_preview": (markdown_content or "")[:500].replace("\n", " ") + "..."
         }
-
 

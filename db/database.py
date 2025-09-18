@@ -165,9 +165,14 @@ async def load_all_leads_from_db(
     params = []
 
     if filters:
-        if filters.get("company_name"):
-            where_clauses.append("company_name LIKE %s")
-            params.append(f'%{filters.get("company_name")}%')
+        if filters.get("search_term"):
+            search_term = f'%{filters.get("search_term")}%'
+            where_clauses.append("""(
+                company_name LIKE %s OR 
+                website LIKE %s OR 
+                reasoning LIKE %s
+            )""")
+            params.extend([search_term, search_term, search_term])
         if filters.get("source"):
             where_clauses.append("source = %s")
             params.append(filters.get("source"))

@@ -236,8 +236,6 @@ async def rescrape_lead_by_id(job_id: str, lead_id: int, job_status_dict: Dict[s
 
         if (lead.get("email") == "N/A" or not lead.get("email")) and fallback_contacts.get("emails"):
             lead["email"] = fallback_contacts["emails"]
-        if (lead.get("contact_no") == "N/A" or not lead.get("contact_no")) and fallback_contacts.get("contact_no"):
-            lead["contact_no"] = fallback_contacts["contact_no"]
 
         await save_lead_to_db(lead)
         update_job_status({"status": "lead", "lead": lead})

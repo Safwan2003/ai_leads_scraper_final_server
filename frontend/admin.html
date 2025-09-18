@@ -52,7 +52,7 @@
                     <!-- Advanced Filters -->
                     <div class="bg-gray-700 p-4 rounded-lg mb-6">
                         <div class="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-5 gap-4">
-                            <input type="text" id="filter-company-name" placeholder="Filter by Company..." class="bg-gray-800 border border-gray-600 rounded-lg py-2 px-3 text-white focus:outline-none focus:border-indigo-500">
+                            <input type="text" id="filter-search-term" placeholder="Universal Search..." class="bg-gray-800 border border-gray-600 rounded-lg py-2 px-3 text-white focus:outline-none focus:border-indigo-500">
                             <select id="filter-qualified" class="bg-gray-800 border border-gray-600 rounded-lg py-2 px-3 text-white focus:outline-none focus:border-indigo-500">
                                 <option value="">All Qualifications</option>
                                 <option value="Hot Lead">Hot Lead</option>
@@ -73,6 +73,7 @@
                         <div id="bulk-actions-container" class="hidden">
                             <select id="bulk-action-select" class="bg-gray-700 border border-gray-600 rounded-lg py-2 px-3 text-white">
                                 <option value="">Bulk Actions</option>
+                                <option value="rescrape">Rescrape Selected</option>
                                 <option value="delete">Delete Selected</option>
                                 <option value="set_status_New">Set Status: New</option>
                                 <option value="set_status_Contacted">Set Status: Contacted</option>
@@ -126,7 +127,7 @@
         const leadsTableBody = document.getElementById('leads-table-body');
         const totalLeadsStat = document.getElementById('total-leads-stat');
         const applyFiltersButton = document.getElementById('apply-filters');
-        const filterCompanyName = document.getElementById('filter-company-name');
+        const filterSearchTerm = document.getElementById('filter-search-term');
         const filterQualified = document.getElementById('filter-qualified');
         const filterSource = document.getElementById('filter-source');
         const filterMinScore = document.getElementById('filter-min-score');
@@ -144,6 +145,18 @@
         let qualificationChart = null;
         let sourceChart = null;
         let selectedLeadIds = new Set();
+
+        const escapeHTML = (str) => {
+            if (!str) return '';
+            return String(str).replace(/[&<>"'`]/g, match => ({
+                '&': '&amp;',
+                '<': '&lt;',
+                '>': '&gt;',
+                '"': '&quot;',
+                "'": '&#039;',
+                '`': '&#96;'
+            }[match]));
+        };
 
         const getStatusClass = status => {
             switch (status) {
@@ -209,7 +222,7 @@
             url.searchParams.append('page', currentPage);
             url.searchParams.append('limit', limit);
             url.searchParams.append('sort_by', sortBy.value);
-            if (filterCompanyName.value) url.searchParams.append('company_name', filterCompanyName.value);
+            if (filterSearchTerm.value) url.searchParams.append('search_term', filterSearchTerm.value);
             if (filterQualified.value) url.searchParams.append('qualified', filterQualified.value);
             if (filterSource.value) url.searchParams.append('source', filterSource.value);
             if (filterMinScore.value) url.searchParams.append('min_score', filterMinScore.value);
@@ -337,10 +350,18 @@
                             <div><label class="block text-gray-300 text-sm font-bold mb-1">Score</label><input id="swal-lead-score" type="number" class="swal2-input bg-gray-700" value="${lead.lead_score || 0}"></div>
                             <div class="md:col-span-2"><label class="block text-gray-300 text-sm font-bold mb-1">Email</label><input id="swal-email" class="swal2-input bg-gray-700" value="${Array.isArray(lead.email) ? lead.email.join(', ') : (lead.email || '')}"></div>
                             <div class="md:col-span-2"><label class="block text-gray-300 text-sm font-bold mb-1">Contact No</label><input id="swal-contact-no" class="swal2-input bg-gray-700" value="${Array.isArray(lead.contact_no) ? lead.contact_no.join(', ') : (lead.contact_no || '')}"></div>
+                            <div class="md:col-span-2"><label class="block text-gray-300 text-sm font-bold mb-1">Reasoning</label><textarea id="swal-reasoning" class="swal2-textarea bg-gray-700 text-white" readonly></textarea></div>
+                            <div class="md:col-span-2"><label class="block text-gray-300 text-sm font-bold mb-1">Signals</label><textarea id="swal-signals" class="swal2-textarea bg-gray-700 text-white" readonly></textarea></div>
+                            <div class="md:col-span-2"><label class="block text-gray-300 text-sm font-bold mb-1">Red Flags</label><textarea id="swal-red-flags" class="swal2-textarea bg-gray-700 text-white" readonly></textarea></div>
                         </div>
                     `,
                     focusConfirm: false, showCancelButton: true, confirmButtonText: 'Save Changes', background: '#1F2937', color: '#ffffff',
                     customClass: { confirmButton: 'bg-indigo-600 hover:bg-indigo-700' },
+                    didOpen: (modalElement) => {
+                        modalElement.querySelector('#swal-reasoning').value = lead.reasoning || '';
+                        modalElement.querySelector('#swal-signals').value = Array.isArray(lead.signals) ? lead.signals.join(', ') : '';
+                        modalElement.querySelector('#swal-red-flags').value = Array.isArray(lead.red_flags) ? lead.red_flags.join(', ') : '';
+                    },
                     preConfirm: () => ({
                         company_name: document.getElementById('swal-company-name').value,
                         website: document.getElementById('swal-website').value,

@@ -20,9 +20,7 @@ import json
 from agents.implementations.google_agent import run_google_scraper
 from agents.implementations.facebook_agent import run_facebook_scraper
 from agents.implementations.linkedin_agent import run_linkedin_scraper
-from agents.implementations.twitter_agent import run_twitter_scraper
 from agents.implementations.instagram_agent import run_instagram_scraper
-from agents.implementations.freelance_agent import run_freelance_scraper
 from agents.utils import rescrape_lead_by_id
 from db.database import (
     initialize_database, load_all_leads_from_db, get_lead_by_id_from_db, 
@@ -121,9 +119,7 @@ async def _run_scraping_job(job_id: str, service: str, industry: str, location: 
             'google': run_google_scraper,
             'facebook': run_facebook_scraper,
             'linkedin': run_linkedin_scraper,
-            'twitter': run_twitter_scraper,
             'instagram': run_instagram_scraper,
-            'freelance': run_freelance_scraper, 
         }
         for agent in agents:
             if agent in agent_map:
@@ -223,7 +219,7 @@ async def get_all_leads_for_admin(
     limit: int = 10,
     sort_by: str = "last_updated",
     sort_order: str = "DESC",
-    company_name: str = None,
+    search_term: str = None,
     website: str = None,
     qualified: str = None,
     source: str = None,
@@ -232,7 +228,7 @@ async def get_all_leads_for_admin(
     min_score: int = None
 ):
     filters = {
-        "company_name": company_name,
+        "search_term": search_term,
         "website": website,
         "qualified": qualified,
         "source": source,
@@ -249,7 +245,7 @@ async def get_admin_stats():
     return stats
 
 @main.post("/admin/bulk-actions/leads", status_code=200)
-async def bulk_update_leads_for_admin(request: BulkUpdateRequest):
+async def bulk_update_leads_for_admin(request: BulkUpdateRequest, background_tasks: BackgroundTasks):
     if not request.lead_ids:
         raise HTTPException(status_code=400, detail="No lead IDs provided")
 
@@ -261,6 +257,14 @@ async def bulk_update_leads_for_admin(request: BulkUpdateRequest):
         status = request.action.replace("set_status_", "")
         await bulk_update_lead_status(request.lead_ids, status)
         return {"message": f"Leads status updated to {status}"}
+
+    if request.action == "rescrape":
+        job_ids = []
+        for lead_id in request.lead_ids:
+            job_id = str(uuid.uuid4())
+            background_tasks.add_task(rescrape_lead_by_id, job_id, lead_id, _job_status)
+            job_ids.append(job_id)
+        return {"message": f"Started rescraping for {len(job_ids)} leads.", "job_ids": job_ids}
 
     raise HTTPException(status_code=400, detail="Invalid bulk action")
 
